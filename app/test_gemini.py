@@ -56,6 +56,18 @@ def test_gemini_integration():
         analysis = analyze_profile_with_gemini(test_image, gemini_api_key)
         print(f"✅ Profile analysis successful. Keys: {list(analysis.keys())}")
         
+        # Test comment generation
+        print("\n🧪 Testing comment generation...")
+        from gemini_analyzer import generate_comment_gemini, generate_advanced_comment_gemini
+        
+        sample_profile = "I love hiking and coffee. Looking for someone who enjoys outdoor adventures and good conversations."
+        
+        comment = generate_comment_gemini(sample_profile, gemini_api_key)
+        print(f"✅ Basic comment generated: {comment}")
+        
+        advanced_comment = generate_advanced_comment_gemini(sample_profile, "comedic", gemini_api_key)
+        print(f"✅ Advanced comment generated: {advanced_comment}")
+        
         return True
         
     except Exception as e:

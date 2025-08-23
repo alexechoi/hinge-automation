@@ -3,7 +3,6 @@
 import asyncio
 import time
 import os
-import openai
 import cv2
 import uuid
 from dotenv import load_dotenv
@@ -12,7 +11,7 @@ from ppadb.client import Client as AdbClient
 
 # Import your prompt engine weight updater
 from prompt_engine import update_template_weights
-from config import OPENAI_API_KEY, GEMINI_API_KEY
+from config import GEMINI_API_KEY
 
 # Import your existing helper functions
 from helper_functions import (
@@ -39,7 +38,7 @@ from data_store import (
     calculate_template_success_rates,
 )
 
-openai.api_key = OPENAI_API_KEY
+# Using Gemini API instead of OpenAI
 
 
 # async def main():

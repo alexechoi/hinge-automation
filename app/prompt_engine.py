@@ -1,10 +1,9 @@
 # app/prompt_engine.py
 
-import openai
 import random
-from config import OPENAI_API_KEY
-
-openai.api_key = OPENAI_API_KEY
+import os
+from google import genai
+from config import GEMINI_API_KEY
 
 COMEDIC_KEY = "comedic"
 FLIRTY_KEY = "flirty"
@@ -88,17 +87,30 @@ def generate_prompt(style_template: str, keywords: list, sentiment: str) -> str:
     return system_prompt
 
 
-def call_gpt4(prompt: str, temperature: float = 0.7, max_tokens: int = 150) -> str:
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
-    return response.choices[0].message["content"].strip()
+def call_gemini(prompt: str, temperature: float = 0.7, max_tokens: int = 150) -> str:
+    """Call Gemini API instead of GPT-4"""
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # Gemini doesn't have separate temperature/max_tokens, but we can include guidance in prompt
+        enhanced_prompt = f"""
+        You are a helpful assistant that is witty and humorous.
+        
+        {prompt}
+        
+        Keep your response concise (under {max_tokens} characters) and engaging.
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[enhanced_prompt]
+        )
+        
+        return response.text.strip() if response.text else "Hey, I'd love to meet up!"
+        
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        return "Hey, I'd love to meet up!"
 
 
 def generate_comment(profile_text: str) -> str:
@@ -116,5 +128,5 @@ def generate_comment(profile_text: str) -> str:
 
     style_template = choose_template(sentiment, keywords)
     final_prompt = generate_prompt(style_template, keywords, sentiment)
-    generated_text = call_gpt4(final_prompt)
+    generated_text = call_gemini(final_prompt)
     return generated_text

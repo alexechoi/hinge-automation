@@ -3,14 +3,12 @@ import time
 from PIL import Image
 import numpy as np
 import cv2
-import openai
 from dotenv import load_dotenv
 import os
 import cv2
 import numpy as np
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
 def find_icon(
@@ -205,29 +203,10 @@ def do_comparision(profile_image, sample_images):
 
 
 def generate_comment(profile_text):
-    prompt = f"""
-    Based on the following profile description, generate a 1-line friendly and personalized comment asking them to go out with you:
-
-    Profile Description:
-    {profile_text}
-
-    Comment:
-    """
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a friendly and likable person who is witty and humorous",
-            },
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=1500,
-        temperature=0.7,
-    )
-
-    comment = response.choices[0].message["content"].strip()
-    return comment
+    """Legacy function - now uses Gemini via gemini_analyzer"""
+    from gemini_analyzer import generate_comment_gemini
+    from config import GEMINI_API_KEY
+    return generate_comment_gemini(profile_text, GEMINI_API_KEY)
 
 
 def get_screen_resolution(device):
