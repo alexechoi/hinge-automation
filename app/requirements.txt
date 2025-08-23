@@ -3,7 +3,8 @@ spacy==3.6.0
 textblob==0.17.1
 vaderSentiment==3.3.2
 python-dotenv==1.0.0
-pytesseract==0.3.10
+google-genai==1.31.0
+requests==2.32.5
 Pillow==9.5.0
 opencv-python
 pure-python-adb

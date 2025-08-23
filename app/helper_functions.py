@@ -3,7 +3,6 @@ import time
 from PIL import Image
 import numpy as np
 import cv2
-import pytesseract
 import openai
 from dotenv import load_dotenv
 import os
@@ -172,10 +171,7 @@ def swipe(device, x1, y1, x2, y2, duration=500):
     device.shell(f"input swipe {x1} {y1} {x2} {y2} {duration}")
 
 
-def extract_text_from_image(image_path):
-    image = Image.open(image_path)
-    text = pytesseract.image_to_string(image)
-    return text
+# Removed extract_text_from_image - now using Gemini API via gemini_analyzer.py
 
 
 def do_comparision(profile_image, sample_images):

@@ -12,7 +12,7 @@ from ppadb.client import Client as AdbClient
 
 # Import your prompt engine weight updater
 from prompt_engine import update_template_weights
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, GEMINI_API_KEY
 
 # Import your existing helper functions
 from helper_functions import (
@@ -22,13 +22,15 @@ from helper_functions import (
     open_hinge,
     swipe,
     capture_screenshot,
-    extract_text_from_image,  # If you want to keep your original OCR or unify with text_analyzer
     do_comparision,
     find_icon,
     generate_comment,  # If you're using the advanced prompt_engine, you can rename or unify
     tap,
     input_text,
 )
+
+# Import Gemini-based image analyzer
+from gemini_analyzer import extract_text_from_image_gemini, analyze_profile_with_gemini
 
 # Import data store logic for success-rate tracking
 from data_store import (
@@ -94,8 +96,8 @@ def main():
         swipe(device, x1_swipe, y1_swipe, x2_swipe, y2_swipe)
         screenshot_path = capture_screenshot(device, "screen")
 
-        # OCR for text extraction (or direct from text_analyzer, whichever you prefer)
-        current_profile_text = extract_text_from_image(screenshot_path).strip()
+        # Use Gemini API for text extraction from profile images
+        current_profile_text = extract_text_from_image_gemini(screenshot_path, GEMINI_API_KEY).strip()
         if not current_profile_text:
             print("Warning: OCR returned empty text.")
 
