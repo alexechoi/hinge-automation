@@ -124,6 +124,8 @@ def connect_device(user_ip_address="127.0.0.1"):
     adb = AdbClient(host=user_ip_address, port=5037)
     devices = adb.devices()
 
+    print("Devices connected: ", devices)
+
     if len(devices) == 0:
         print("No devices connected")
         return None

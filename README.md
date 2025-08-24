@@ -1,13 +1,15 @@
 ﻿# Pitch Perfect
 
-This project also demonstrates how to automate interactions with Hinge (a dating app) using a combination of the following tools and techniques:
+This project demonstrates how to automate interactions with Hinge (a dating app) using a combination of the following tools and techniques:
 
 - **ADB (Android Debug Bridge)**: Automate device actions such as taps, swipes, and text input.
 - **Computer Vision (OpenCV)**: Detect and locate UI elements on the screen using feature-based and template matching methods.
-- **OCR (Tesseract via pytesseract)**: Extract text from screenshots to analyze profile descriptions or other textual content.
-- **LLM (OpenAI GPT-4)**: Generate personalized, human-like comments based on extracted text content.
+- **AI Image Understanding (Google Gemini)**: Extract and analyze text from screenshots using advanced multimodal AI capabilities.
+- **LLM (Google Gemini)**: Generate personalized, human-like comments based on extracted text content.
 
 By integrating these components, the script can make automated decisions (like or dislike profiles) and even respond with a custom-generated pickup line or comment.
+
+> **🆕 Latest Update**: This project has been fully migrated from OpenAI + Tesseract OCR to Google's Gemini API for both image analysis and text generation. See [GEMINI_SETUP.md](GEMINI_SETUP.md) for migration details.
 
 ## Demo
 
@@ -15,12 +17,12 @@ By integrating these components, the script can make automated decisions (like o
 
 ## Features
 
-- **Connect to Android Device**: Establish a connection to your Android device over ADB and retrieve screen resolution.
-- **Capture Screenshots**: Save current device screen state to an image file.
-- **UI Element Detection**: Locate buttons or icons using ORB feature matching and fallback template matching.
-- **Text Extraction**: Use Tesseract OCR to read text content from on-screen images.
-- **Comment Generation**: Use GPT-4 to create personalized, one-line comments based on the extracted profile text.
-- **Automated Actions**: Simulate user input (taps, swipes, text entry) to interact with the app, such as liking or disliking profiles and inputting custom messages.
+- **🤖 Intelligent Profile Analysis**: Uses Gemini AI to understand profile content, interests, and personality traits
+- **💬 Smart Comment Generation**: Creates personalized, contextual messages with different styles (comedic, flirty, straightforward)
+- **👀 Advanced Computer Vision**: Detects UI elements and analyzes profile images with high accuracy
+- **📱 Full Device Automation**: Handles taps, swipes, text input, and navigation via ADB
+- **🔄 Adaptive Learning**: Tracks success rates and adjusts comment generation strategies
+- **🐳 Docker Support**: Easy deployment with containerized environment
 
 ## Requirements
 
@@ -28,70 +30,145 @@ By integrating these components, the script can make automated decisions (like o
 - **ADB**:  
   Install the [Android SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools) and ensure `adb` is accessible from your PATH.
 - **Device Setup**:
-
   - Enable Developer Options and USB Debugging on your Android device.
   - Authorize your computer for USB debugging when prompted.
+- **Google Gemini API Key**:
+  - Get your free API key from [Google AI Studio](https://aistudio.google.com/)
+  - No credit card required for basic usage
 
-- **Python Libraries**:
+### Dependencies Installation
 
-  - [pure-python-adb (ppadb)](https://pypi.org/project/pure-python-adb/) for ADB interactions:
-    ```bash
-    pip install pure-python-adb
-    ```
-  - [OpenCV](https://pypi.org/project/opencv-python/) for computer vision:
-    ```bash
-    pip install opencv-python
-    ```
-  - [Pillow](https://pypi.org/project/Pillow/) for image handling:
-    ```bash
-    pip install pillow
-    ```
-  - [pytesseract](https://pypi.org/project/pytesseract/) for OCR (requires Tesseract OCR engine installed on your system):
-    ```bash
-    pip install pytesseract
-    ```
-  - [python-dotenv](https://pypi.org/project/python-dotenv/) for environment variables:
-    ```bash
-    pip install python-dotenv
-    ```
-  - [openai](https://pypi.org/project/openai/) for GPT-4 integration:
-    ```bash
-    pip install openai
-    ```
+Install all dependencies at once:
+```bash
+cd app/
+pip install -r requirements.txt
+```
 
-- **Tesseract OCR Engine**:
-  - **Windows**: [Download the installer here](https://github.com/UB-Mannheim/tesseract/wiki).
-  - **macOS/Linux**: Install via Homebrew (`brew install tesseract`) or your package manager.
+Or install individually:
+```bash
+pip install pure-python-adb opencv-python pillow python-dotenv google-genai spacy textblob vaderSentiment requests
+```
 
-## Setup
+**Note**: Tesseract OCR and OpenAI dependencies are no longer required thanks to the Gemini migration.
 
-1. **Add your OpenAI API Key**:
-   Create a `.env` file in the project directory to add your OpenAI key and phone's IP address:
+## Quick Start
+
+### Option 1: Local Setup (Recommended)
+
+1. **Clone and Navigate**:
+   ```bash
+   git clone <repository-url>
+   cd hinge-automation/app
+   ```
+
+2. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+   ```
+
+3. **Configure API Key**:
+   Create a `.env` file in the app directory:
    ```env
-   OPENAI_API_KEY=your-api-key
+   GEMINI_API_KEY=your-gemini-api-key-here
    ```
-2. **Build the docker container**:
+   Get your free API key from [Google AI Studio](https://aistudio.google.com/)
 
-   ```
-   docker build -t my-ocr-bot -f .\docker\Dockerfile .
+4. **Connect Your Android Device**:
+   ```bash
+   # Enable USB debugging on your phone, then:
+   adb devices  # Should show your device
    ```
 
-3. **Run the docker container**:
+5. **Test the Setup**:
+   ```bash
+   python test_gemini.py  # Test Gemini integration
    ```
+
+6. **Run the Bot**:
+   ```bash
+   python main.py
+   ```
+
+### Option 2: Docker Setup
+
+1. **Build the Docker container**:
+   ```bash
+   docker build -t my-ocr-bot -f docker/Dockerfile .
+   ```
+
+2. **Run the container**:
+   ```bash
    docker run my-ocr-bot
    ```
 
-**Note: To debug**:
-In case of weird behaviour, open the container and check what's up.
+## Troubleshooting
 
-```
+### Docker Debugging
+In case of weird behavior, open the container and check what's up:
+```bash
 docker run -it --entrypoint /bin/bash my-ocr-bot
 ```
 
-To connect wirelessly from shell
-
-```
+### Wireless ADB Connection
+To connect wirelessly from shell:
+```bash
 adb tcpip 5555
-
-adb connect 192.168.X.Y:5555
+adb connect 192.168.X.Y:5555  # Replace with your phone's IP
 ```
+
+### Common Issues
+
+- **"No devices connected"**: Make sure USB debugging is enabled and device is authorized
+- **"GEMINI_API_KEY not set"**: Check your `.env` file is in the correct directory with the right key
+- **Import errors**: Run `pip install -r requirements.txt` and `python -m spacy download en_core_web_sm`
+- **Docker build fails**: Use `docker/Dockerfile` path (forward slashes, not backslashes)
+
+## Architecture Overview
+
+The bot works in these steps:
+1. **Screenshot Capture**: Takes screenshots of the dating app
+2. **AI Image Analysis**: Uses Gemini to extract profile text and analyze content  
+3. **Decision Making**: Analyzes profile compatibility using computer vision and AI
+4. **Comment Generation**: Creates personalized comments using Gemini's language capabilities
+5. **Automated Actions**: Executes swipes, likes, and message sending via ADB
+
+## Migration from OpenAI/Tesseract
+
+This project has been fully migrated to Google's Gemini API for better performance and cost-effectiveness:
+
+✅ **Better OCR**: Gemini's multimodal understanding vs. Tesseract  
+✅ **Smarter Comments**: Context-aware generation vs. basic GPT prompts  
+✅ **Cost Effective**: Single API for both image and text processing  
+✅ **No Local Dependencies**: No need to install Tesseract OCR  
+
+See [GEMINI_SETUP.md](GEMINI_SETUP.md) for detailed migration information.
+
+## File Structure
+
+```
+hinge-automation/
+├── app/
+│   ├── main.py              # Main automation script
+│   ├── gemini_analyzer.py   # Gemini AI integration
+│   ├── helper_functions.py  # ADB and computer vision utilities
+│   ├── prompt_engine.py     # Comment generation logic
+│   ├── config.py           # Configuration management
+│   ├── requirements.txt    # Python dependencies
+│   └── test_gemini.py      # Test script for Gemini integration
+├── docker/
+│   └── Dockerfile          # Docker container configuration
+├── README.md               # This file
+└── GEMINI_SETUP.md         # Gemini migration guide
+```
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+- Code follows the existing patterns
+- New features include appropriate tests
+- Documentation is updated for any API changes
+
+## Disclaimer
+
+This project is for educational purposes. Use responsibly and in accordance with the terms of service of any applications you interact with.
