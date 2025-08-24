@@ -118,12 +118,39 @@ def main():
             approx_y=y_select_like_button_approx,
         )
 
-        # Decision-making logic
-        if (
-            match_like * 0 < match_dislike
-            and x_select_like_button is not None
-            and y_select_like_button is not None
-        ):
+        # Enhanced decision-making logic using Gemini analysis
+        profile_analysis = analyze_profile_with_gemini(screenshot_path, GEMINI_API_KEY)
+        
+        # Decision factors
+        like_decision = False
+        reason = "No clear reason to like"
+        
+        # Check if like button is available
+        if x_select_like_button is not None and y_select_like_button is not None:
+            # Use computer vision scores (lower is better match)
+            cv_likes_profile = match_like < match_dislike and match_like < 100
+            
+            # Use AI analysis for smarter decisions
+            if profile_analysis:
+                interests = profile_analysis.get('interests', [])
+                sentiment = profile_analysis.get('sentiment', 'neutral')
+                key_topics = profile_analysis.get('key_topics', [])
+                
+                # Smart decision making
+                if len(interests) >= 2 and sentiment in ['positive', 'neutral']:
+                    like_decision = True
+                    reason = f"Shared interests: {', '.join(interests[:2])}"
+                elif len(key_topics) >= 1 and current_profile_text:
+                    like_decision = True  
+                    reason = f"Good conversation starters: {key_topics[0]}"
+                elif cv_likes_profile:
+                    like_decision = True
+                    reason = "Visual similarity to liked profiles"
+            elif cv_likes_profile:
+                like_decision = True
+                reason = "Computer vision match"
+        
+        if like_decision:
             # Generate a comment using your advanced logic or the existing generate_comment
             # For demonstration, let's assume your 'generate_comment' calls GPT-4, etc.
             comment = (
@@ -170,18 +197,28 @@ def main():
             # store_feedback(comment_id=comment_id, outcome="match")
 
         else:
-            # If same profile text as previous, might be stuck
+            # Enhanced dislike logic with better reasoning
             if (
                 previous_profile_text == current_profile_text
                 and current_profile_text != ""
             ):
-                print("Dislike (same profile encountered again)")
+                reason = "Same profile encountered again - likely stuck"
+                print(f"⚠️  Dislike: {reason}")
+                # Try swiping more aggressively when stuck
+                swipe(device, x1_swipe, y1_swipe, x2_swipe, int(y2_swipe * 0.5))  # Longer swipe
             else:
-                print("Dislike (new profile or no like match)")
-
-            print(
-                "Dislike tapped at:", x_dislike_button_approx, y_dislike_button_approx
-            )
+                if not current_profile_text:
+                    reason = "No profile text extracted"
+                elif x_select_like_button is None:
+                    reason = "Like button not found"
+                elif profile_analysis and profile_analysis.get('sentiment') == 'negative':
+                    reason = "Negative profile sentiment detected"
+                else:
+                    reason = "Profile doesn't meet criteria"
+                
+                print(f"👎 Dislike: {reason}")
+                
+            print(f"Dislike tapped at: {x_dislike_button_approx}, {y_dislike_button_approx}")
             tap(device, x_dislike_button_approx, y_dislike_button_approx)
 
         previous_profile_text = current_profile_text
