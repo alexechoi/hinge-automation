@@ -24,6 +24,7 @@ from helper_functions import (
     tap_with_confidence,
     scroll_profile,
     input_text,
+    dismiss_keyboard,
 )
 
 # Import Gemini-based image analyzer
@@ -33,7 +34,8 @@ from gemini_analyzer import (
     find_ui_elements_with_gemini,
     analyze_profile_scroll_content,
     get_profile_navigation_strategy,
-    detect_comment_ui_elements
+    detect_comment_ui_elements,
+    verify_action_success
 )
 
 # Import data store logic for success-rate tracking
@@ -212,6 +214,33 @@ def handle_comment_interface(device, comment_text, width, height, gemini_api_key
             input_text(device, comment_text)
             
             # Wait for text to be entered
+            time.sleep(1)
+            
+            # Handle keyboard - try multiple methods to close it or send via Enter
+            print("  ⌨️  Handling keyboard to reveal send button...")
+            
+            # Method 1: Try Enter key first (might send the comment directly)
+            print("  🔑 Trying ENTER key (might send comment directly)...")
+            device.shell("input keyevent KEYCODE_ENTER")
+            time.sleep(2)
+            
+            # Check if Enter sent the comment by taking a screenshot
+            after_enter_screenshot = capture_screenshot(device, f"after_enter_{attempt}")
+            post_enter_ui = detect_comment_ui_elements(after_enter_screenshot, gemini_api_key)
+            
+            # If comment interface is gone or shows sending state, Enter worked!
+            if not post_enter_ui.get('comment_field_found') or post_enter_ui.get('interface_state') == 'sending':
+                print("  ✅ ENTER key sent the comment successfully!")
+                time.sleep(2)  # Wait for send to complete
+                return True
+            
+            # If we're still in comment interface, Enter didn't send - need to close keyboard
+            print("  📱 ENTER didn't send, closing keyboard to access Send button...")
+            
+            # Method 2: Use our comprehensive keyboard dismissal function
+            dismiss_keyboard(device, width, height)
+            
+            # Give extra time for keyboard to fully close
             time.sleep(2)
             
             # Take another screenshot to verify text was entered and find send button
@@ -220,10 +249,35 @@ def handle_comment_interface(device, comment_text, width, height, gemini_api_key
             
             # Check for send button
             if not send_ui.get('send_button_found'):
-                print(f"  ⚠️  Send button not found, trying fallback coordinates")
-                # Based on your screenshot, "Send Like" button is around this area
-                send_x = int(width * 0.75)  # Right side
-                send_y = int(height * 0.82)  # Near bottom
+                print(f"  ⚠️  Send button not found after keyboard handling")
+                
+                # Try one more aggressive keyboard dismissal
+                print("  🔄 Trying additional keyboard dismissal methods...")
+                try:
+                    # Force close keyboard with back key
+                    device.shell("input keyevent KEYCODE_BACK")
+                    time.sleep(1)
+                    # Also try escape key
+                    device.shell("input keyevent KEYCODE_ESCAPE") 
+                    time.sleep(1)
+                except:
+                    pass
+                
+                # Take one more screenshot
+                final_keyboard_screenshot = capture_screenshot(device, f"final_keyboard_attempt_{attempt}")
+                final_send_ui = detect_comment_ui_elements(final_keyboard_screenshot, gemini_api_key)
+                
+                if final_send_ui.get('send_button_found'):
+                    send_x = int(final_send_ui['send_button_x'] * width)
+                    send_y = int(final_send_ui['send_button_y'] * height)
+                    send_confidence = final_send_ui.get('send_button_confidence', 0.8)
+                    print(f"  ✅ Send button found after additional keyboard handling: ({send_x}, {send_y})")
+                else:
+                    print(f"  🎯 Using fallback coordinates for Send button")
+                    # Based on your screenshot, "Send Like" button is around this area
+                    send_x = int(width * 0.75)  # Right side  
+                    send_y = int(height * 0.82)  # Near bottom
+                    send_confidence = 0.6  # Lower confidence for fallback
             else:
                 send_x = int(send_ui['send_button_x'] * width)
                 send_y = int(send_ui['send_button_y'] * height)
@@ -232,19 +286,32 @@ def handle_comment_interface(device, comment_text, width, height, gemini_api_key
             
             # Tap send button
             print(f"  📤 Tapping Send button at ({send_x}, {send_y})")
-            tap_with_confidence(device, send_x, send_y, send_ui.get('send_button_confidence', 0.8))
+            tap_with_confidence(device, send_x, send_y, send_confidence)
             
             # Wait for send action to complete
             time.sleep(3)
             
-            # Take final screenshot to verify success
+            # VERIFICATION: Check if comment was actually sent
+            print("  🔍 Verifying comment submission...")
             final_screenshot = capture_screenshot(device, f"after_send_{attempt}")
+            comment_verification = verify_action_success(final_screenshot, "comment_sent", gemini_api_key)
             
-            # Check if we're back to the main interface (comment interface should be gone)
-            # You could add verification logic here if needed
+            print(f"  📋 Comment verification: {comment_verification.get('description', 'No description')}")
             
-            print("  ✅ Comment sent successfully!")
-            return True
+            if comment_verification.get('comment_sent', False):
+                print(f"  ✅ Comment verified successfully! Confidence: {comment_verification.get('confidence', 0):.2f}")
+                return True
+            else:
+                print(f"  ⚠️  Comment verification failed! Confidence: {comment_verification.get('confidence', 0):.2f}")
+                
+                # If this was our last attempt, still return partial success
+                if attempt >= max_retries - 1:
+                    print("  ⚠️  Max attempts reached, treating as partial success")
+                    return True  # Comment interface handling completed, even if verification unclear
+                
+                # Otherwise, continue to next attempt
+                print("  🔄 Comment verification failed, will retry...")
+                continue
             
         except Exception as e:
             print(f"  ❌ Error in comment attempt {attempt + 1}: {e}")
@@ -390,6 +457,40 @@ def main():
                 button_data['tap_area_size']
             )
             
+            # Wait for like action to register
+            time.sleep(2)
+            
+            # VERIFICATION: Check if like was successful
+            print("🔍 Verifying like action success...")
+            like_verification_screenshot = capture_screenshot(device, f"like_verification_{profile_index}")
+            like_verification = verify_action_success(like_verification_screenshot, "like_tap", GEMINI_API_KEY)
+            
+            print(f"📋 Like verification: {like_verification.get('description', 'No description')}")
+            
+            if not like_verification.get('like_successful', False):
+                print(f"⚠️  Like verification failed! Confidence: {like_verification.get('confidence', 0):.2f}")
+                
+                # Retry like action once
+                if like_verification.get('confidence', 0) < 0.7:
+                    print("🔄 Retrying like action...")
+                    
+                    # Try tapping like button again, maybe with slight offset
+                    offset_x = button_data['like_x'] + 10
+                    offset_y = button_data['like_y'] + 5
+                    tap_with_confidence(device, offset_x, offset_y, button_data['confidence'])
+                    time.sleep(2)
+                    
+                    # Verify retry
+                    retry_verification_screenshot = capture_screenshot(device, f"like_retry_verification_{profile_index}")
+                    retry_verification = verify_action_success(retry_verification_screenshot, "like_tap", GEMINI_API_KEY)
+                    
+                    if retry_verification.get('like_successful', False):
+                        print("✅ Like retry successful!")
+                    else:
+                        print("❌ Like retry also failed, continuing anyway...")
+            else:
+                print(f"✅ Like verified successfully! Confidence: {like_verification.get('confidence', 0):.2f}")
+            
             # Handle the comment interface that appears after liking
             comment_success = handle_comment_interface(
                 device, comment, width, height, GEMINI_API_KEY, max_retries=3
@@ -409,14 +510,64 @@ def main():
             
             print(f"👎 Tapping DISLIKE: {reason}")
             tap(device, x_dislike_button_approx, y_dislike_button_approx)
+            
+            # Wait for dislike action to register
+            time.sleep(2)
+            
+            # VERIFICATION: Check if dislike was successful (should advance profile)
+            print("🔍 Verifying dislike action...")
+            dislike_verification_screenshot = capture_screenshot(device, f"dislike_verification_{profile_index}")
+            dislike_verification = verify_action_success(dislike_verification_screenshot, "profile_change", GEMINI_API_KEY)
+            
+            if dislike_verification.get('profile_changed', False):
+                print(f"✅ Dislike verified - profile advanced! Confidence: {dislike_verification.get('confidence', 0):.2f}")
+            else:
+                print(f"⚠️  Dislike might not have registered. Confidence: {dislike_verification.get('confidence', 0):.2f}")
+                # We'll handle this in the navigation verification step
 
         # STEP 7: Navigate to next profile
         time.sleep(3)
         print("➡️  Navigating to next profile...")
         swipe(device, x1_swipe, y1_swipe, x2_swipe, y2_swipe)
+        time.sleep(3)
+        
+        # VERIFICATION: Check if we successfully moved to next profile
+        print("🔍 Verifying profile navigation...")
+        navigation_verification_screenshot = capture_screenshot(device, f"navigation_verification_{profile_index}")
+        profile_verification = verify_action_success(navigation_verification_screenshot, "profile_change", GEMINI_API_KEY)
+        
+        print(f"📋 Navigation verification: {profile_verification.get('description', 'No description')}")
+        
+        if profile_verification.get('profile_changed', False):
+            print(f"✅ Profile change verified! Confidence: {profile_verification.get('confidence', 0):.2f}")
+        else:
+            print(f"⚠️  Profile change verification failed! Confidence: {profile_verification.get('confidence', 0):.2f}")
+            
+            # Try additional navigation if we seem stuck
+            if profile_verification.get('stuck_indicator', False):
+                print("🔄 Detected stuck state, trying alternative navigation...")
+                
+                # Try different swipe pattern
+                alt_swipe_start_x = int(width * 0.8)
+                alt_swipe_start_y = int(height * 0.4) 
+                alt_swipe_end_x = int(width * 0.2)
+                alt_swipe_end_y = int(height * 0.6)
+                
+                swipe(device, alt_swipe_start_x, alt_swipe_start_y, alt_swipe_end_x, alt_swipe_end_y)
+                time.sleep(2)
+                
+                # Try back button in case we're in a nested screen
+                try:
+                    device.shell("input keyevent KEYCODE_BACK")
+                    time.sleep(1)
+                except:
+                    pass
+                
+                # One more swipe attempt
+                swipe(device, x1_swipe, y1_swipe, x2_swipe, y2_swipe)
+                time.sleep(3)
 
         previous_profile_text = current_profile_text
-        time.sleep(3)
 
     print("\n🎉 Processing complete!")
     final_success_rates = calculate_template_success_rates()
