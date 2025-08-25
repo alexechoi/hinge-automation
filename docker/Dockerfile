@@ -1,19 +1,17 @@
 # docker/Dockerfile
 FROM python:3.9-slim
 
-# Install system dependencies for OCR, spaCy, etc.
+# Install system dependencies for OpenCV, spaCy, etc.
 RUN apt-get update && apt-get install -y \
     gcc \
     libffi-dev \
     libssl-dev \
     wget \
-    tesseract-ocr \
-    libtesseract-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Add apt-get instructions to install libGL
+# Install OpenGL libraries for OpenCV
 RUN apt-get update && \
-    apt-get install -y libgl1-mesa-glx && \
+    apt-get install -y libgl1-mesa-dev libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install ADB into container

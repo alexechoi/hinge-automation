@@ -157,7 +157,106 @@ def capture_screenshot(device, filename):
 
 
 def tap(device, x, y):
+    """Basic tap function"""
     device.shell(f"input tap {x} {y}")
+
+
+def tap_with_confidence(device, x, y, confidence=1.0, tap_area_size="medium"):
+    """
+    Enhanced tap function with accuracy adjustments based on confidence and area size
+    """
+    # Adjust tap position based on confidence and area size
+    if confidence < 0.7:
+        # If low confidence, tap slightly offset to increase hit chance
+        offset = 20 if tap_area_size == "small" else 10
+        device.shell(f"input tap {x - offset} {y}")
+        time.sleep(0.2)
+        device.shell(f"input tap {x + offset} {y}")
+    elif tap_area_size == "large":
+        # For large areas, tap the center
+        device.shell(f"input tap {x} {y}")
+    else:
+        # Standard tap
+        device.shell(f"input tap {x} {y}")
+    
+    print(f"Tapped at ({x}, {y}) with confidence {confidence:.2f}")
+
+
+def scroll_profile(device, width, height, direction="down", distance=0.5):
+    """
+    Scroll through a dating profile to see more content
+    """
+    center_x = int(width * 0.5)
+    
+    if direction == "down":
+        start_y = int(height * 0.7)
+        end_y = int(height * 0.3)
+    else:  # up
+        start_y = int(height * 0.3)
+        end_y = int(height * 0.7)
+    
+    # Adjust end position based on distance
+    end_y = int(start_y + (end_y - start_y) * distance)
+    
+    swipe(device, center_x, start_y, center_x, end_y)
+    print(f"Scrolled {direction} from ({center_x}, {start_y}) to ({center_x}, {end_y})")
+
+
+def dismiss_keyboard(device, width=None, height=None):
+    """
+    Try multiple methods to dismiss/hide the on-screen keyboard
+    
+    Returns:
+        bool: True if likely successful, False otherwise
+    """
+    methods_tried = []
+    
+    try:
+        # Method 1: Press Enter (might send message in some apps)
+        print("  📥 Trying ENTER key to close keyboard...")
+        device.shell("input keyevent KEYCODE_ENTER")
+        methods_tried.append("ENTER")
+        time.sleep(1)
+        
+    except Exception as e:
+        print(f"  ⚠️  ENTER key failed: {e}")
+    
+    try:
+        # Method 2: Back key to hide keyboard
+        print("  ⬅️  Trying BACK key to hide keyboard...")
+        device.shell("input keyevent KEYCODE_BACK")
+        methods_tried.append("BACK")
+        time.sleep(1)
+        
+    except Exception as e:
+        print(f"  ⚠️  BACK key failed: {e}")
+    
+    try:
+        # Method 3: Hide keyboard ADB command
+        print("  📱 Trying hide keyboard command...")
+        device.shell("ime disable com.android.inputmethod.latin/.LatinIME")
+        time.sleep(0.5)
+        device.shell("ime enable com.android.inputmethod.latin/.LatinIME")
+        methods_tried.append("IME_TOGGLE")
+        time.sleep(1)
+        
+    except Exception as e:
+        print(f"  ⚠️  IME toggle failed: {e}")
+    
+    try:
+        # Method 4: Tap outside keyboard area
+        if width and height:
+            print("  👆 Trying tap outside keyboard area...")
+            # Tap in upper third of screen where keyboard shouldn't be
+            tap(device, int(width * 0.5), int(height * 0.25))
+            methods_tried.append("TAP_OUTSIDE")
+            time.sleep(1)
+            
+    except Exception as e:
+        print(f"  ⚠️  Tap outside failed: {e}")
+    
+    print(f"  📝 Keyboard dismissal methods tried: {', '.join(methods_tried)}")
+    return len(methods_tried) > 0
 
 
 def input_text(device, text):
