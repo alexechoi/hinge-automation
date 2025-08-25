@@ -157,7 +157,49 @@ def capture_screenshot(device, filename):
 
 
 def tap(device, x, y):
+    """Basic tap function"""
     device.shell(f"input tap {x} {y}")
+
+
+def tap_with_confidence(device, x, y, confidence=1.0, tap_area_size="medium"):
+    """
+    Enhanced tap function with accuracy adjustments based on confidence and area size
+    """
+    # Adjust tap position based on confidence and area size
+    if confidence < 0.7:
+        # If low confidence, tap slightly offset to increase hit chance
+        offset = 20 if tap_area_size == "small" else 10
+        device.shell(f"input tap {x - offset} {y}")
+        time.sleep(0.2)
+        device.shell(f"input tap {x + offset} {y}")
+    elif tap_area_size == "large":
+        # For large areas, tap the center
+        device.shell(f"input tap {x} {y}")
+    else:
+        # Standard tap
+        device.shell(f"input tap {x} {y}")
+    
+    print(f"Tapped at ({x}, {y}) with confidence {confidence:.2f}")
+
+
+def scroll_profile(device, width, height, direction="down", distance=0.5):
+    """
+    Scroll through a dating profile to see more content
+    """
+    center_x = int(width * 0.5)
+    
+    if direction == "down":
+        start_y = int(height * 0.7)
+        end_y = int(height * 0.3)
+    else:  # up
+        start_y = int(height * 0.3)
+        end_y = int(height * 0.7)
+    
+    # Adjust end position based on distance
+    end_y = int(start_y + (end_y - start_y) * distance)
+    
+    swipe(device, center_x, start_y, center_x, end_y)
+    print(f"Scrolled {direction} from ({center_x}, {start_y}) to ({center_x}, {end_y})")
 
 
 def input_text(device, text):

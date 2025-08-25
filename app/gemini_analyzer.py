@@ -228,3 +228,269 @@ def generate_advanced_comment_gemini(profile_text: str, style: str = "balanced",
     except Exception as e:
         print(f"Error generating advanced comment with Gemini API: {e}")
         return "Hey, I'd love to meet up!"
+
+
+def analyze_dating_ui_with_gemini(image_path: str, gemini_api_key: str = None) -> dict:
+    """
+    Use Gemini to analyze the dating app UI and determine what actions are available.
+    
+    Returns:
+        Dictionary with UI analysis including like button location, profile content, etc.
+    """
+    if not gemini_api_key:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+    
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY environment variable not set")
+    
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        
+        image_part = types.Part.from_bytes(
+            data=image_bytes,
+            mime_type='image/png'
+        )
+        
+        prompt = """
+        Analyze this dating app screenshot and provide a comprehensive UI analysis in JSON format:
+        
+        {
+            "has_like_button": true/false,
+            "like_button_visible": true/false,
+            "profile_quality_score": 1-10,
+            "should_like": true/false,
+            "reason": "detailed reason for recommendation",
+            "ui_elements_detected": ["list", "of", "visible", "elements"],
+            "profile_attractiveness": 1-10,
+            "text_content_quality": 1-10,
+            "conversation_potential": 1-10,
+            "red_flags": ["any", "concerning", "elements"],
+            "positive_indicators": ["good", "signs", "to", "like"]
+        }
+        
+        Base your recommendation on:
+        - Profile photo quality and attractiveness
+        - Bio text content (if visible)
+        - Overall profile completeness
+        - Any red flags or positive indicators
+        - Whether this seems like a good potential match
+        
+        Be honest in your assessment.
+        """
+        
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json"
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, image_part],
+            config=config
+        )
+        
+        return json.loads(response.text) if response.text else {}
+        
+    except Exception as e:
+        print(f"Error analyzing UI with Gemini API: {e}")
+        return {
+            "has_like_button": False,
+            "should_like": False,
+            "reason": "Analysis failed",
+            "profile_quality_score": 5
+        }
+
+
+def find_ui_elements_with_gemini(image_path: str, element_type: str = "like_button", gemini_api_key: str = None) -> dict:
+    """
+    Use Gemini to find UI elements and their approximate locations.
+    
+    Args:
+        image_path: Path to screenshot
+        element_type: Type of element to find ("like_button", "dislike_button", etc.)
+        gemini_api_key: API key
+    
+    Returns:
+        Dictionary with element location info
+    """
+    if not gemini_api_key:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+    
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        
+        image_part = types.Part.from_bytes(
+            data=image_bytes,
+            mime_type='image/png'
+        )
+        
+        prompt = f"""
+        Analyze this dating app screenshot and find the {element_type}.
+        
+        Look carefully for:
+        - Like button: Heart icon, usually green/pink, often at bottom right area (around 70-90% from left, 80-95% from top)
+        - Dislike button: X icon or cross, usually red, often at bottom left area (around 10-30% from left, 80-95% from top)
+        - Scroll area: The main profile content area that can be scrolled (usually center 20-80% of screen)
+        
+        Provide precise location in JSON format:
+        {{
+            "element_found": true/false,
+            "approximate_x_percent": 0.0-1.0,
+            "approximate_y_percent": 0.0-1.0,
+            "confidence": 0.0-1.0,
+            "description": "detailed description of what you see",
+            "visual_context": "describe surrounding elements",
+            "tap_area_size": "small/medium/large"
+        }}
+        
+        Be very precise with coordinates. Dating app buttons are usually in consistent locations.
+        Express coordinates as percentages where 0.0 = left/top edge, 1.0 = right/bottom edge.
+        """
+        
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json"
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, image_part],
+            config=config
+        )
+        
+        return json.loads(response.text) if response.text else {"element_found": False}
+        
+    except Exception as e:
+        print(f"Error finding UI elements with Gemini: {e}")
+        return {"element_found": False}
+
+
+def analyze_profile_scroll_content(image_path: str, gemini_api_key: str = None) -> dict:
+    """
+    Analyze if there's more content to scroll through on a profile.
+    
+    Returns:
+        Dictionary with scroll analysis
+    """
+    if not gemini_api_key:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+    
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        
+        image_part = types.Part.from_bytes(
+            data=image_bytes,
+            mime_type='image/png'
+        )
+        
+        prompt = """
+        Analyze this dating profile screenshot to determine scrolling needs:
+        
+        {
+            "has_more_content": true/false,
+            "scroll_direction": "up/down/none",
+            "content_completion": 0.0-1.0,
+            "visible_profile_elements": ["photos", "bio", "prompts", "interests"],
+            "should_scroll_down": true/false,
+            "scroll_area_center_x": 0.0-1.0,
+            "scroll_area_center_y": 0.0-1.0,
+            "analysis": "description of what's visible and what might be below",
+            "scroll_confidence": 0.0-1.0,
+            "estimated_content_below": "description of likely content below"
+        }
+        
+        Look carefully for:
+        - Text that appears cut off at the bottom edge
+        - Photos that are partially visible
+        - Section headers followed by minimal content
+        - Prompts or questions with incomplete answers
+        - Bio text that seems to continue beyond visible area
+        - Any visual indicators of more content (scroll bars, etc.)
+        
+        Only suggest scrolling down if you're confident there's meaningful content below.
+        Be conservative - don't suggest scrolling if the profile appears complete.
+        
+        The scroll area should be in the center of the profile content, avoiding buttons at bottom.
+        """
+        
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json"
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, image_part],
+            config=config
+        )
+        
+        return json.loads(response.text) if response.text else {"has_more_content": False}
+        
+    except Exception as e:
+        print(f"Error analyzing scroll content: {e}")
+        return {"has_more_content": False}
+
+
+def get_profile_navigation_strategy(image_path: str, gemini_api_key: str = None) -> dict:
+    """
+    Determine the best navigation strategy to avoid getting stuck.
+    """
+    if not gemini_api_key:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+    
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        
+        image_part = types.Part.from_bytes(
+            data=image_bytes,
+            mime_type='image/png'
+        )
+        
+        prompt = """
+        Analyze this dating app screen to determine navigation strategy:
+        
+        {
+            "screen_type": "profile/card_stack/other",
+            "stuck_indicator": true/false,
+            "navigation_action": "swipe_left/swipe_right/scroll_down/tap_next/go_back",
+            "swipe_direction": "left/right/up/down",
+            "swipe_start_x": 0.0-1.0,
+            "swipe_start_y": 0.0-1.0,
+            "swipe_end_x": 0.0-1.0,
+            "swipe_end_y": 0.0-1.0,
+            "confidence": 0.0-1.0,
+            "reason": "why this navigation is recommended"
+        }
+        
+        Identify if this looks like:
+        - A profile view (detailed profile page) - needs swipe or back button
+        - Card stack view (swipeable profiles) - needs horizontal swipes
+        - Error/stuck state - needs different navigation
+        
+        For getting unstuck, recommend larger swipe distances and different directions.
+        """
+        
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json"
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, image_part],
+            config=config
+        )
+        
+        return json.loads(response.text) if response.text else {"navigation_action": "swipe_left"}
+        
+    except Exception as e:
+        print(f"Error getting navigation strategy: {e}")
+        return {"navigation_action": "swipe_left", "reason": "fallback"}

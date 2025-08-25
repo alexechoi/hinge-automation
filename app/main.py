@@ -32,7 +32,8 @@ from gemini_analyzer import (
     analyze_dating_ui_with_gemini,
     find_ui_elements_with_gemini,
     analyze_profile_scroll_content,
-    get_profile_navigation_strategy
+    get_profile_navigation_strategy,
+    detect_comment_ui_elements
 )
 
 # Import data store logic for success-rate tracking
@@ -160,6 +161,123 @@ def detect_buttons_for_action(screenshot_path, width, height, gemini_api_key):
     return button_data
 
 
+def handle_comment_interface(device, comment_text, width, height, gemini_api_key, max_retries=3):
+    """
+    Handle the comment interface after tapping like button.
+    
+    Returns:
+        bool: True if comment was successfully sent, False otherwise
+    """
+    print("💬 Phase 4: Handling comment interface...")
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"  📝 Comment attempt {attempt + 1}/{max_retries}")
+            
+            # Wait for comment interface to load
+            time.sleep(2)
+            
+            # Take screenshot of comment interface
+            comment_screenshot = capture_screenshot(device, f"comment_interface_{attempt}")
+            
+            # Detect comment UI elements using Gemini
+            comment_ui = detect_comment_ui_elements(comment_screenshot, gemini_api_key)
+            
+            print(f"  📊 Interface analysis: {comment_ui.get('description', 'No description')}")
+            
+            # Check if comment field is found
+            if not comment_ui.get('comment_field_found'):
+                print(f"  ❌ Comment field not found (attempt {attempt + 1})")
+                if attempt < max_retries - 1:
+                    # Try tapping in approximate comment area
+                    approximate_comment_y = int(height * 0.75)  # Based on your screenshot
+                    tap(device, int(width * 0.5), approximate_comment_y)
+                    continue
+                else:
+                    return False
+            
+            # Tap on comment field
+            comment_x = int(comment_ui['comment_field_x'] * width)
+            comment_y = int(comment_ui['comment_field_y'] * height)
+            comment_confidence = comment_ui.get('comment_field_confidence', 0.8)
+            
+            print(f"  👆 Tapping comment field at ({comment_x}, {comment_y}) confidence: {comment_confidence:.2f}")
+            tap_with_confidence(device, comment_x, comment_y, comment_confidence)
+            
+            # Wait for text field to become active
+            time.sleep(1.5)
+            
+            # Input the comment text
+            print(f"  ⌨️  Typing comment: {comment_text}")
+            input_text(device, comment_text)
+            
+            # Wait for text to be entered
+            time.sleep(2)
+            
+            # Take another screenshot to verify text was entered and find send button
+            after_text_screenshot = capture_screenshot(device, f"after_text_{attempt}")
+            send_ui = detect_comment_ui_elements(after_text_screenshot, gemini_api_key)
+            
+            # Check for send button
+            if not send_ui.get('send_button_found'):
+                print(f"  ⚠️  Send button not found, trying fallback coordinates")
+                # Based on your screenshot, "Send Like" button is around this area
+                send_x = int(width * 0.75)  # Right side
+                send_y = int(height * 0.82)  # Near bottom
+            else:
+                send_x = int(send_ui['send_button_x'] * width)
+                send_y = int(send_ui['send_button_y'] * height)
+                send_confidence = send_ui.get('send_button_confidence', 0.8)
+                print(f"  ✅ Send button detected at ({send_x}, {send_y}) confidence: {send_confidence:.2f}")
+            
+            # Tap send button
+            print(f"  📤 Tapping Send button at ({send_x}, {send_y})")
+            tap_with_confidence(device, send_x, send_y, send_ui.get('send_button_confidence', 0.8))
+            
+            # Wait for send action to complete
+            time.sleep(3)
+            
+            # Take final screenshot to verify success
+            final_screenshot = capture_screenshot(device, f"after_send_{attempt}")
+            
+            # Check if we're back to the main interface (comment interface should be gone)
+            # You could add verification logic here if needed
+            
+            print("  ✅ Comment sent successfully!")
+            return True
+            
+        except Exception as e:
+            print(f"  ❌ Error in comment attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                print(f"  🔄 Retrying comment submission...")
+                # Take screenshot for debugging
+                capture_screenshot(device, f"comment_error_{attempt}")
+                time.sleep(2)
+                continue
+            else:
+                print("  ❌ All comment attempts failed")
+                
+                # Try to cancel/escape the comment interface
+                try:
+                    print("  🚫 Attempting to cancel comment interface...")
+                    # Look for cancel button or try back gesture
+                    cancel_ui = detect_comment_ui_elements(final_screenshot, gemini_api_key)
+                    if cancel_ui.get('cancel_button_found'):
+                        cancel_x = int(cancel_ui['cancel_button_x'] * width)
+                        cancel_y = int(cancel_ui['cancel_button_y'] * height)
+                        tap(device, cancel_x, cancel_y)
+                    else:
+                        # Try back gesture or escape
+                        device.shell("input keyevent KEYCODE_BACK")
+                    time.sleep(2)
+                except:
+                    pass
+                
+                return False
+    
+    return False
+
+
 def main():
     device = connect_device("127.0.0.1")
     if not device:
@@ -272,7 +390,17 @@ def main():
                 button_data['tap_area_size']
             )
             
-            time.sleep(2)
+            # Handle the comment interface that appears after liking
+            comment_success = handle_comment_interface(
+                device, comment, width, height, GEMINI_API_KEY, max_retries=3
+            )
+            
+            if comment_success:
+                print("  🎉 Like with comment sent successfully!")
+            else:
+                print("  ⚠️  Like sent but comment may have failed")
+            
+            time.sleep(3)  # Wait for interface to settle
             
         else:
             # Execute dislike
