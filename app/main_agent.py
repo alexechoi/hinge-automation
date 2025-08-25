@@ -1,15 +1,15 @@
 # app/main_agent.py
 
 """
-Main entry point for the LangGraph-based Hinge automation agent.
-This replaces the original main.py with a more robust, agent-based approach.
+Main entry point for the Gemini-controlled Hinge automation agent.
+This uses Gemini AI to intelligently select and execute tools for dating app automation.
 """
 
 import asyncio
 import argparse
 from typing import Dict, Any, Optional
 
-from langgraph_agent import HingeAutomationAgent
+from gemini_agent_controller import GeminiAgentController
 from agent_config import AgentConfig, DEFAULT_CONFIG, FAST_CONFIG, CONSERVATIVE_CONFIG
 
 
@@ -76,32 +76,30 @@ def get_config(config_name: str, args) -> AgentConfig:
 def print_session_summary(result: Dict[str, Any]):
     """Print a summary of the automation session"""
     print("\n" + "="*60)
-    print("🎉 HINGE AUTOMATION SESSION SUMMARY")
+    print("🤖 GEMINI-CONTROLLED HINGE AUTOMATION SUMMARY")
     print("="*60)
     print(f"📊 Profiles Processed: {result.get('profiles_processed', 0)}")
+    print(f"💖 Likes Sent: {result.get('likes_sent', 0)}")
+    print(f"💬 Comments Sent: {result.get('comments_sent', 0)}")
+    print(f"❌ Errors Encountered: {result.get('errors_encountered', 0)}")
     print(f"🏁 Completion Reason: {result.get('completion_reason', 'Unknown')}")
     
-    final_state = result.get('final_state', {})
-    if final_state:
-        error_count = final_state.get('error_count', 0)
-        stuck_count = final_state.get('stuck_count', 0)
-        
-        print(f"❌ Total Errors: {error_count}")
-        print(f"🔒 Times Stuck: {stuck_count}")
-        print(f"🔄 Last Action: {final_state.get('last_action', 'Unknown')}")
-        
-        if final_state.get('action_successful', False):
-            print("✅ Final Action: Successful")
-        else:
-            print("⚠️  Final Action: Failed")
+    if result.get('final_success_rates'):
+        print(f"📈 Final Success Rates: {result['final_success_rates']}")
+    
+    success = result.get('success', False)
+    if success:
+        print("✅ Session: Completed Successfully")
+    else:
+        print("⚠️  Session: Completed with Issues")
     
     print("="*60)
 
 
 async def main():
-    """Main entry point for the agent"""
-    print("🚀 Starting Hinge Automation Agent (LangGraph)")
-    print("="*50)
+    """Main entry point for the Gemini-controlled agent"""
+    print("🤖 Starting Gemini-Controlled Hinge Automation Agent")
+    print("="*55)
     
     try:
         # Parse arguments
@@ -115,16 +113,18 @@ async def main():
         print(f"🎯 Max Profiles: {config.max_profiles}")
         print(f"🔊 Verbose Logging: {config.verbose_logging}")
         print(f"📸 Save Screenshots: {config.save_screenshots}")
+        print(f"🤖 AI Controller: Google Gemini")
         print()
         
-        # Create and run agent
-        agent = HingeAutomationAgent(
+        # Create and run Gemini-controlled agent
+        agent = GeminiAgentController(
             max_profiles=config.max_profiles,
             config=config
         )
         
         # Run automation
-        print("🎬 Starting automation workflow...")
+        print("🎬 Starting Gemini-powered automation workflow...")
+        print("🧠 Gemini will analyze screenshots and intelligently select tools...")
         result = agent.run_automation()
         
         # Print summary
@@ -154,7 +154,7 @@ def run_sync():
     try:
         return asyncio.run(main())
     except Exception as e:
-        print(f"Failed to run async main: {e}")
+        print(f"Failed to run Gemini-controlled automation: {e}")
         return 1
 
 
