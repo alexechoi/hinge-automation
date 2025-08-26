@@ -9,7 +9,7 @@ import asyncio
 import argparse
 from typing import Dict, Any
 
-from gemini_agent_controller import GeminiAgentController
+from langgraph_hinge_agent import LangGraphHingeAgent
 from agent_config import AgentConfig, DEFAULT_CONFIG, FAST_CONFIG, CONSERVATIVE_CONFIG
 
 
@@ -76,7 +76,7 @@ def get_config(config_name: str, args) -> AgentConfig:
 def print_session_summary(result: Dict[str, Any]):
     """Print a summary of the automation session"""
     print("\n" + "="*60)
-    print("🤖 GEMINI-CONTROLLED HINGE AUTOMATION SUMMARY")
+    print("🤖 LANGGRAPH + GEMINI HINGE AUTOMATION SUMMARY")
     print("="*60)
     print(f"📊 Profiles Processed: {result.get('profiles_processed', 0)}")
     print(f"💖 Likes Sent: {result.get('likes_sent', 0)}")
@@ -98,7 +98,7 @@ def print_session_summary(result: Dict[str, Any]):
 
 async def main():
     """Main entry point for the Gemini-controlled agent"""
-    print("🤖 Starting Gemini-Controlled Hinge Automation Agent")
+    print("🤖 Starting LangGraph-Powered Hinge Automation Agent")
     print("="*55)
     
     try:
@@ -113,18 +113,18 @@ async def main():
         print(f"🎯 Max Profiles: {config.max_profiles}")
         print(f"🔊 Verbose Logging: {config.verbose_logging}")
         print(f"📸 Save Screenshots: {config.save_screenshots}")
-        print(f"🤖 AI Controller: Google Gemini")
+        print(f"🤖 AI Controller: Google Gemini + LangGraph")
         print()
         
-        # Create and run Gemini-controlled agent
-        agent = GeminiAgentController(
+        # Create and run LangGraph-powered agent
+        agent = LangGraphHingeAgent(
             max_profiles=config.max_profiles,
             config=config
         )
         
         # Run automation
-        print("🎬 Starting Gemini-powered automation workflow...")
-        print("🧠 Gemini will analyze screenshots and intelligently select tools...")
+        print("🎬 Starting LangGraph-powered automation workflow...")
+        print("🧠 LangGraph + Gemini will manage state and intelligently route actions...")
         result = agent.run_automation()
         
         # Print summary
@@ -154,7 +154,7 @@ def run_sync():
     try:
         return asyncio.run(main())
     except Exception as e:
-        print(f"Failed to run Gemini-controlled automation: {e}")
+        print(f"Failed to run LangGraph automation: {e}")
         return 1
 
 
