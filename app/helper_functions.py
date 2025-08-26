@@ -151,6 +151,8 @@ def connect_device_remote(user_ip_address="127.0.0.1"):
 
 def capture_screenshot(device, filename):
     result = device.screencap()
+    # Ensure images directory exists
+    os.makedirs("images", exist_ok=True)
     with open("images/" + str(filename) + ".png", "wb") as fp:
         fp.write(result)
     return "images/" + str(filename) + ".png"
