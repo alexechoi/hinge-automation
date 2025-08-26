@@ -1,0 +1,18 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "google-genai>=1.31.0",
+    "langchain>=0.3.26",
+    "langchain-google-genai>=2.1.9",
+    "langgraph>=0.5.1",
+    "numpy>=2.2.6",
+    "opencv-python>=4.11.0.86",
+    "pillow>=11.3.0",
+    "pure-python-adb>=0.3.0.dev0",
+    "pydantic>=2.11.7",
+    "python-dotenv>=1.1.1",
+]
