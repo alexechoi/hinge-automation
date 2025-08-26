@@ -67,9 +67,7 @@ adb devices  # Should show your connected device
 uv run python test_gemini_agent.py
 
 # 7. Run the automation (choose your preferred agent)
-uv run python main_agent.py           # Gemini-controlled agent
-# or
-uv run python langgraph_agent.py      # LangGraph-based agent
+uv run python main_agent.py           # LangGraph + Gemini agent (recommended)
 ```
 
 ## 📁 Project Structure
@@ -77,9 +75,9 @@ uv run python langgraph_agent.py      # LangGraph-based agent
 ```
 hinge-automation/
 ├── app/
-│   ├── main_agent.py              # 🎯 Main Gemini-controlled agent (recommended)
-│   ├── langgraph_agent.py         # 🔄 Advanced LangGraph workflow agent
-│   ├── gemini_agent_controller.py # 🤖 Core Gemini agent implementation
+│   ├── main_agent.py              # 🎯 Main entry point (uses LangGraph + Gemini)
+│   ├── langgraph_hinge_agent.py   # 🔄 LangGraph workflow agent implementation
+│   ├── gemini_agent_controller.py # 🤖 Legacy Gemini agent (replaced by LangGraph)
 │   ├── gemini_analyzer.py         # 🧠 AI analysis functions (OCR, decision making)
 │   ├── helper_functions.py        # 📱 ADB automation & computer vision utilities
 │   ├── agent_config.py            # ⚙️  Agent configuration presets
@@ -113,17 +111,23 @@ uv run python main_agent.py --profiles 20 --verbose
 uv run python main_agent.py --config fast --profiles 5
 ```
 
-### Agent Types
+### LangGraph Architecture
 
-1. **Gemini Agent** (`main_agent.py`): 
-   - Single AI agent that makes all decisions
-   - Simpler architecture, faster execution
-   - Best for most users
+The system now uses **LangGraph** for sophisticated workflow management:
 
-2. **LangGraph Agent** (`langgraph_agent.py`):
-   - Complex workflow with multiple specialized nodes
-   - More sophisticated decision making
-   - Better for advanced users and experimentation
+- **State-Based Execution**: Maintains comprehensive state throughout the automation process
+- **Conditional Routing**: Gemini analyzes current state and decides the next action dynamically
+- **Automatic Recovery**: Built-in error handling and stuck state recovery
+- **Workflow Visualization**: Clear node-based architecture for debugging and optimization
+- **Intelligent Retries**: Contextual retry logic based on action type and failure mode
+
+Key workflow nodes:
+- `gemini_decide_action` - AI-powered decision making
+- `capture_screenshot` - Screen capture and state updates
+- `analyze_profile` - Profile text and quality analysis
+- `execute_like/dislike` - Action execution with verification
+- `handle_comment_interface` - Complex comment sending workflow
+- `recover_from_stuck` - Multi-pattern recovery strategies
 
 ## 🧠 How It Works
 
