@@ -75,6 +75,9 @@ class HingeAgentState(TypedDict):
     # Gemini decision context
     gemini_reasoning: str
     next_tool_suggestion: str
+    
+    # Batch processing for LangGraph recursion limit management
+    batch_start_index: int
 
 
 class LangGraphHingeAgent:
@@ -90,6 +93,10 @@ class LangGraphHingeAgent:
         self.config = config or DEFAULT_CONFIG
         self.gemini_client = genai.Client(api_key=GEMINI_API_KEY)
         self.graph = self._build_workflow()
+        
+        # Profile batch processing to avoid LangGraph recursion limits
+        self.profiles_per_batch = 3  # Process 3 profiles per batch to stay under 25-turn limit
+        self.max_turns_per_profile = 8  # Estimated max turns needed per profile
     
     def _build_workflow(self) -> StateGraph:
         """Build the LangGraph workflow with Gemini-controlled decision making"""
@@ -171,7 +178,14 @@ class LangGraphHingeAgent:
         
         workflow.add_edge("finalize_session", END)
         
-        return workflow.compile()
+        # Compile with increased recursion limit for multi-profile processing
+        # Each profile may require 10-15 iterations, so allow for more profiles
+        return workflow.compile(
+            checkpointer=None,  # No checkpointing needed for our use case
+            interrupt_before=None,
+            interrupt_after=None,
+            debug=False
+        )
     
     # Routing functions
     def _route_initialization(self, state: HingeAgentState) -> str:
@@ -182,7 +196,10 @@ class LangGraphHingeAgent:
     
     def _route_action_result(self, state: HingeAgentState) -> str:
         # Check completion conditions
-        if (state["current_profile_index"] >= state["max_profiles"] or
+        batch_start = state.get("batch_start_index", 0)
+        batch_end = batch_start + self.profiles_per_batch
+        
+        if (state["current_profile_index"] >= min(batch_end, state["max_profiles"]) or
             state["errors_encountered"] > self.config.max_errors_before_abort or
             not state.get("should_continue", True)):
             return "finalize"
@@ -1238,64 +1255,118 @@ class LangGraphHingeAgent:
         }
     
     def run_automation(self) -> Dict[str, Any]:
-        """Run the complete LangGraph automation workflow"""
-        print("🚀 Starting LangGraph-powered Hinge automation...")
+        """Run the complete LangGraph automation workflow with batch processing"""
+        print("🚀 Starting LangGraph-powered Hinge automation with batch processing...")
+        print(f"📊 Processing {self.max_profiles} profiles in batches of {self.profiles_per_batch}")
         
-        initial_state = HingeAgentState(
-            device=None,
-            width=0,
-            height=0,
-            max_profiles=self.max_profiles,
-            current_profile_index=0,
-            profiles_processed=0,
-            likes_sent=0,
-            comments_sent=0,
-            errors_encountered=0,
-            stuck_count=0,
-            current_screenshot=None,
-            profile_text="",
-            profile_analysis={},
-            decision_reason="",
-            previous_profile_text="",
-            previous_profile_features={},
-            last_action="",
-            action_successful=True,
-            retry_count=0,
-            generated_comment="",
-            comment_id="",
-            like_button_coords=None,
-            like_button_confidence=0.0,
-            should_continue=True,
-            completion_reason="",
-            gemini_reasoning="",
-            next_tool_suggestion=""
-        )
+        # Initialize cumulative results
+        total_results = {
+            "success": True,
+            "profiles_processed": 0,
+            "likes_sent": 0,
+            "comments_sent": 0,
+            "errors_encountered": 0,
+            "completion_reason": "Session completed",
+            "batches_completed": 0,
+            "final_success_rates": {}
+        }
         
-        # Execute the LangGraph workflow
-        try:
-            final_state = self.graph.invoke(initial_state)
+        # Calculate number of batches needed
+        num_batches = (self.max_profiles + self.profiles_per_batch - 1) // self.profiles_per_batch
+        print(f"📦 Will process {num_batches} batches")
+        
+        # Initialize device connection state that persists across batches
+        device = None
+        width = height = 0
+        
+        for batch_num in range(num_batches):
+            batch_start = batch_num * self.profiles_per_batch
+            batch_end = min(batch_start + self.profiles_per_batch, self.max_profiles)
             
-            return {
-                "success": True,
-                "profiles_processed": final_state.get("profiles_processed", 0),
-                "likes_sent": final_state.get("likes_sent", 0),
-                "comments_sent": final_state.get("comments_sent", 0),
-                "errors_encountered": final_state.get("errors_encountered", 0),
-                "completion_reason": final_state.get("completion_reason", "Session completed"),
-                "final_success_rates": calculate_template_success_rates()
-            }
+            print(f"\n🎯 Starting batch {batch_num + 1}/{num_batches} (profiles {batch_start + 1}-{batch_end})")
             
-        except Exception as e:
-            print(f"❌ LangGraph automation failed: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "profiles_processed": 0,
-                "likes_sent": 0,
-                "comments_sent": 0,
-                "errors_encountered": 1,
-                "completion_reason": f"Failed with error: {e}"
-            }
+            # Create initial state for this batch
+            batch_state = HingeAgentState(
+                device=device,  # Reuse device connection
+                width=width,
+                height=height,
+                max_profiles=self.max_profiles,
+                current_profile_index=batch_start,
+                profiles_processed=total_results["profiles_processed"],
+                likes_sent=total_results["likes_sent"],
+                comments_sent=total_results["comments_sent"],
+                errors_encountered=total_results["errors_encountered"],
+                stuck_count=0,
+                current_screenshot=None,
+                profile_text="",
+                profile_analysis={},
+                decision_reason="",
+                previous_profile_text="",
+                previous_profile_features={},
+                last_action="",
+                action_successful=True,
+                retry_count=0,
+                generated_comment="",
+                comment_id="",
+                like_button_coords=None,
+                like_button_confidence=0.0,
+                should_continue=True,
+                completion_reason="",
+                gemini_reasoning="",
+                next_tool_suggestion="",
+                batch_start_index=batch_start
+            )
+            
+            # Execute batch workflow
+            try:
+                print(f"⚡ Executing LangGraph workflow for batch {batch_num + 1}")
+                batch_final_state = self.graph.invoke(batch_state)
+                
+                # Update persistent device state for next batch
+                device = batch_final_state.get("device")
+                width = batch_final_state.get("width", width)
+                height = batch_final_state.get("height", height)
+                
+                # Accumulate results
+                total_results["profiles_processed"] = batch_final_state.get("profiles_processed", total_results["profiles_processed"])
+                total_results["likes_sent"] = batch_final_state.get("likes_sent", total_results["likes_sent"])
+                total_results["comments_sent"] = batch_final_state.get("comments_sent", total_results["comments_sent"])
+                total_results["errors_encountered"] = batch_final_state.get("errors_encountered", total_results["errors_encountered"])
+                total_results["batches_completed"] = batch_num + 1
+                
+                # Check if we should stop due to errors
+                if total_results["errors_encountered"] > self.config.max_errors_before_abort:
+                    print(f"⚠️ Stopping automation due to too many errors: {total_results['errors_encountered']}")
+                    total_results["completion_reason"] = "Too many errors"
+                    break
+                    
+                print(f"✅ Batch {batch_num + 1} completed - Processed: {batch_final_state.get('profiles_processed', 0)}, Likes: {batch_final_state.get('likes_sent', 0)}, Comments: {batch_final_state.get('comments_sent', 0)}")
+                
+            except Exception as e:
+                print(f"❌ Batch {batch_num + 1} failed: {e}")
+                total_results["errors_encountered"] += 1
+                total_results["success"] = False
+                
+                # If first batch fails, it's likely a setup issue
+                if batch_num == 0:
+                    return {
+                        **total_results,
+                        "error": str(e),
+                        "completion_reason": f"Failed on first batch: {e}"
+                    }
+                
+                # For later batches, try to continue with remaining batches
+                print(f"⚠️ Continuing with next batch despite error in batch {batch_num + 1}")
+                continue
+        
+        # Final update of success rates
+        total_results["final_success_rates"] = calculate_template_success_rates()
+        
+        print(f"\n🎉 Automation completed!")
+        print(f"📊 Total stats: {total_results['profiles_processed']} processed, {total_results['likes_sent']} likes, {total_results['comments_sent']} comments")
+        print(f"📦 Batches completed: {total_results['batches_completed']}/{num_batches}")
+        
+        return total_results
 
 
 # Usage example for testing
