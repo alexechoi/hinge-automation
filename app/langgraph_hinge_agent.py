@@ -8,7 +8,7 @@ Uses state-based workflow management for improved reliability and debugging.
 import json
 import time
 import uuid
-from typing import Dict, Any, List, Optional, TypedDict, Literal
+from typing import Dict, Any, Optional, TypedDict
 from langgraph.graph import StateGraph, END
 from google import genai
 from google.genai import types
@@ -17,13 +17,12 @@ from config import GEMINI_API_KEY
 from helper_functions import (
     connect_device, get_screen_resolution, open_hinge,
     capture_screenshot, tap, tap_with_confidence, swipe,
-    input_text, dismiss_keyboard
+    dismiss_keyboard, clear_screenshots_directory
 )
 from gemini_analyzer import (
     extract_text_from_image_gemini, analyze_dating_ui_with_gemini,
     find_ui_elements_with_gemini, analyze_profile_scroll_content,
-    get_profile_navigation_strategy, detect_comment_ui_elements,
-    verify_action_success, generate_comment_gemini
+    detect_comment_ui_elements, generate_comment_gemini
 )
 from data_store import store_generated_comment, calculate_template_success_rates
 from prompt_engine import update_template_weights
@@ -187,6 +186,9 @@ class LangGraphHingeAgent:
     def initialize_session_node(self, state: HingeAgentState) -> HingeAgentState:
         """Initialize the automation session"""
         print("🚀 Initializing LangGraph Hinge automation session...")
+        
+        # Clear old screenshots to prevent confusion
+        clear_screenshots_directory()
         
         device = connect_device(self.config.device_ip)
         if not device:
@@ -503,6 +505,7 @@ class LangGraphHingeAgent:
         )
         
         if not like_button_info.get('element_found'):
+            print("❌ Like button not found during detection")
             return {
                 **state,
                 "current_screenshot": fresh_screenshot,
@@ -512,6 +515,7 @@ class LangGraphHingeAgent:
         
         confidence = like_button_info.get('confidence', 0)
         if confidence < self.config.min_button_confidence:
+            print(f"❌ Like button confidence too low during detection: {confidence} < {self.config.min_button_confidence}")
             return {
                 **state,
                 "current_screenshot": fresh_screenshot,
@@ -523,7 +527,10 @@ class LangGraphHingeAgent:
         like_x = int(like_button_info['approximate_x_percent'] * state["width"])
         like_y = int(like_button_info['approximate_y_percent'] * state["height"])
         
-        print(f"✅ Like button found at ({like_x}, {like_y}) with confidence {confidence}")
+        print(f"✅ Like button detected successfully:")
+        print(f"   📐 Percentages: ({like_button_info['approximate_x_percent']:.2f}, {like_button_info['approximate_y_percent']:.2f})")
+        print(f"   📍 Coordinates: ({like_x}, {like_y})")
+        print(f"   🎯 Confidence: {confidence:.2f}")
         
         return {
             **state,
@@ -554,23 +561,27 @@ class LangGraphHingeAgent:
         
         # Re-detect like button on current screen
         fresh_screenshot = capture_screenshot(state["device"], "fresh_like_detection")
+        
+        # Update state immediately with fresh screenshot
+        updated_state["current_screenshot"] = fresh_screenshot
+        
         like_button_info = find_ui_elements_with_gemini(
             fresh_screenshot, "like_button", GEMINI_API_KEY
         )
         
         if not like_button_info.get('element_found'):
+            print("❌ Like button not found on fresh screenshot")
             return {
                 **updated_state,
-                "current_screenshot": fresh_screenshot,
                 "last_action": "execute_like",
                 "action_successful": False
             }
         
         confidence = like_button_info.get('confidence', 0)
         if confidence < self.config.min_button_confidence:
+            print(f"❌ Like button confidence too low: {confidence} < {self.config.min_button_confidence}")
             return {
                 **updated_state,
-                "current_screenshot": fresh_screenshot,
                 "like_button_confidence": confidence,
                 "last_action": "execute_like",
                 "action_successful": False
@@ -578,6 +589,12 @@ class LangGraphHingeAgent:
         
         like_x = int(like_button_info['approximate_x_percent'] * state["width"])
         like_y = int(like_button_info['approximate_y_percent'] * state["height"])
+        
+        print(f"🎯 Like button detected:")
+        print(f"   📐 Percentages: ({like_button_info['approximate_x_percent']:.2f}, {like_button_info['approximate_y_percent']:.2f})")
+        print(f"   📱 Screen size: {state['width']}x{state['height']}")
+        print(f"   📍 Coordinates: ({like_x}, {like_y})")
+        print(f"   🎯 Confidence: {confidence:.2f}")
         
         # Execute the like tap
         tap_with_confidence(state["device"], like_x, like_y, confidence)
