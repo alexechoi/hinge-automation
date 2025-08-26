@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Dict, Any
-
+import random
 
 @dataclass 
 class AgentConfig:
@@ -15,11 +15,11 @@ class AgentConfig:
     max_stuck_count: int = 3
     
     # Timing settings (in seconds)
-    screenshot_delay: float = 1.0
-    action_delay: float = 2.0
-    navigation_delay: float = 3.0
-    text_input_delay: float = 1.5
-    keyboard_dismiss_delay: float = 2.0
+    screenshot_delay: float = random.uniform(0, 1)
+    action_delay: float = random.uniform(0, 1)
+    navigation_delay: float = random.uniform(0, 1)
+    text_input_delay: float = random.uniform(0, 1)
+    keyboard_dismiss_delay: float = random.uniform(0, 1)
     
     # Profile analysis thresholds
     quality_threshold_high: int = 8
