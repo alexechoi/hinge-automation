@@ -17,7 +17,7 @@ from config import GEMINI_API_KEY
 from helper_functions import (
     connect_device, get_screen_resolution, open_hinge,
     capture_screenshot, tap, tap_with_confidence, swipe,
-    dismiss_keyboard, clear_screenshots_directory
+    dismiss_keyboard, clear_screenshots_directory, detect_like_button_cv
 )
 from gemini_analyzer import (
     extract_text_from_image_gemini, analyze_dating_ui_with_gemini,
@@ -491,8 +491,8 @@ class LangGraphHingeAgent:
         }
     
     def detect_like_button_node(self, state: HingeAgentState) -> HingeAgentState:
-        """Detect like button location"""
-        print("🎯 Detecting like button...")
+        """Detect like button location using computer vision"""
+        print("🎯 Detecting like button with OpenCV...")
         
         # Take fresh screenshot for button detection
         fresh_screenshot = capture_screenshot(
@@ -500,12 +500,11 @@ class LangGraphHingeAgent:
             f"like_detection_{state['current_profile_index']}"
         )
         
-        like_button_info = find_ui_elements_with_gemini(
-            fresh_screenshot, "like_button", GEMINI_API_KEY
-        )
+        # Use CV-based detection instead of Gemini
+        cv_result = detect_like_button_cv(fresh_screenshot)
         
-        if not like_button_info.get('element_found'):
-            print("❌ Like button not found during detection")
+        if not cv_result.get('found'):
+            print("❌ Like button not found with CV detection")
             return {
                 **state,
                 "current_screenshot": fresh_screenshot,
@@ -513,24 +512,15 @@ class LangGraphHingeAgent:
                 "action_successful": False
             }
         
-        confidence = like_button_info.get('confidence', 0)
-        if confidence < self.config.min_button_confidence:
-            print(f"❌ Like button confidence too low during detection: {confidence} < {self.config.min_button_confidence}")
-            return {
-                **state,
-                "current_screenshot": fresh_screenshot,
-                "like_button_confidence": confidence,
-                "last_action": "detect_like_button",
-                "action_successful": False
-            }
+        confidence = cv_result.get('confidence', 0)
+        # CV confidence threshold is handled in the CV function
+        like_x = cv_result['x']
+        like_y = cv_result['y']
         
-        like_x = int(like_button_info['approximate_x_percent'] * state["width"])
-        like_y = int(like_button_info['approximate_y_percent'] * state["height"])
-        
-        print(f"✅ Like button detected successfully:")
-        print(f"   📐 Percentages: ({like_button_info['approximate_x_percent']:.2f}, {like_button_info['approximate_y_percent']:.2f})")
+        print(f"✅ Like button detected with OpenCV:")
         print(f"   📍 Coordinates: ({like_x}, {like_y})")
-        print(f"   🎯 Confidence: {confidence:.2f}")
+        print(f"   🎯 CV Confidence: {confidence:.3f}")
+        print(f"   📐 Template size: {cv_result['width']}x{cv_result['height']}")
         
         return {
             **state,
@@ -559,42 +549,32 @@ class LangGraphHingeAgent:
             'interests': current_analysis.get('interests', [])
         }
         
-        # Re-detect like button on current screen
+        # Re-detect like button on current screen using CV
         fresh_screenshot = capture_screenshot(state["device"], "fresh_like_detection")
         
         # Update state immediately with fresh screenshot
         updated_state["current_screenshot"] = fresh_screenshot
         
-        like_button_info = find_ui_elements_with_gemini(
-            fresh_screenshot, "like_button", GEMINI_API_KEY
-        )
+        # Use CV-based detection for more accuracy
+        cv_result = detect_like_button_cv(fresh_screenshot)
         
-        if not like_button_info.get('element_found'):
-            print("❌ Like button not found on fresh screenshot")
+        if not cv_result.get('found'):
+            print("❌ Like button not found with CV on fresh screenshot")
             return {
                 **updated_state,
                 "last_action": "execute_like",
                 "action_successful": False
             }
         
-        confidence = like_button_info.get('confidence', 0)
-        if confidence < self.config.min_button_confidence:
-            print(f"❌ Like button confidence too low: {confidence} < {self.config.min_button_confidence}")
-            return {
-                **updated_state,
-                "like_button_confidence": confidence,
-                "last_action": "execute_like",
-                "action_successful": False
-            }
+        confidence = cv_result.get('confidence', 0)
+        like_x = cv_result['x']
+        like_y = cv_result['y']
         
-        like_x = int(like_button_info['approximate_x_percent'] * state["width"])
-        like_y = int(like_button_info['approximate_y_percent'] * state["height"])
-        
-        print(f"🎯 Like button detected:")
-        print(f"   📐 Percentages: ({like_button_info['approximate_x_percent']:.2f}, {like_button_info['approximate_y_percent']:.2f})")
+        print(f"🎯 Like button detected with OpenCV:")
         print(f"   📱 Screen size: {state['width']}x{state['height']}")
         print(f"   📍 Coordinates: ({like_x}, {like_y})")
-        print(f"   🎯 Confidence: {confidence:.2f}")
+        print(f"   🎯 CV Confidence: {confidence:.3f}")
+        print(f"   📐 Template size: {cv_result['width']}x{cv_result['height']}")
         
         # Execute the like tap
         tap_with_confidence(state["device"], like_x, like_y, confidence)

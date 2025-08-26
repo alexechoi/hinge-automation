@@ -1,5 +1,6 @@
 from ppadb.client import Client as AdbClient
 import time
+import cv2
 import numpy as np
 from dotenv import load_dotenv
 import os
@@ -175,6 +176,86 @@ def get_screen_resolution(device):
     resolution = output.strip().split(":")[1].strip()
     width, height = map(int, resolution.split("x"))
     return width, height
+
+
+def detect_like_button_cv(screenshot_path):
+    """
+    Detect like button using OpenCV template matching
+    
+    Returns:
+        dict: {
+            'found': bool,
+            'x': int, 
+            'y': int,
+            'confidence': float,
+            'width': int,
+            'height': int
+        }
+    """
+    try:
+        # Load template image
+        template_path = "assets/like_button.png"
+        if not os.path.exists(template_path):
+            print(f"❌ Like button template not found: {template_path}")
+            return {'found': False, 'confidence': 0.0}
+        
+        # Load screenshot and template
+        screenshot = cv2.imread(screenshot_path)
+        template = cv2.imread(template_path)
+        
+        if screenshot is None:
+            print(f"❌ Could not load screenshot: {screenshot_path}")
+            return {'found': False, 'confidence': 0.0}
+            
+        if template is None:
+            print(f"❌ Could not load template: {template_path}")
+            return {'found': False, 'confidence': 0.0}
+        
+        # Get template dimensions
+        template_height, template_width = template.shape[:2]
+        
+        # Convert to grayscale for better matching
+        screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        
+        # Perform template matching
+        result = cv2.matchTemplate(screenshot_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+        
+        # Find the best match
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        
+        # max_val is the confidence score (0-1)
+        confidence = float(max_val)
+        
+        # Calculate center coordinates
+        top_left = max_loc
+        center_x = top_left[0] + template_width // 2
+        center_y = top_left[1] + template_height // 2
+        
+        # Consider it found if confidence is above threshold
+        confidence_threshold = 0.7
+        found = confidence >= confidence_threshold
+        
+        print(f"🎯 CV Like Button Detection:")
+        print(f"   📍 Center: ({center_x}, {center_y})")
+        print(f"   📐 Template size: {template_width}x{template_height}")
+        print(f"   🎯 Confidence: {confidence:.3f}")
+        print(f"   ✅ Found: {found} (threshold: {confidence_threshold})")
+        
+        return {
+            'found': found,
+            'x': center_x,
+            'y': center_y, 
+            'confidence': confidence,
+            'width': template_width,
+            'height': template_height,
+            'top_left_x': top_left[0],
+            'top_left_y': top_left[1]
+        }
+        
+    except Exception as e:
+        print(f"❌ CV like button detection failed: {e}")
+        return {'found': False, 'confidence': 0.0}
 
 
 def open_hinge(device):

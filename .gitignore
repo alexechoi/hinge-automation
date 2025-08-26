@@ -1,7 +1,8 @@
 *.env
 *.jpeg
-*.png
+images/*.png
 *.pyc
 app/generated_comments.json
 *__pycache__
 *.venv
+*.DS_Store
