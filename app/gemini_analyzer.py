@@ -218,8 +218,8 @@ def find_ui_elements_with_gemini(image_path: str, element_type: str = "like_butt
         Analyze this dating app screenshot and find the {element_type}.
         
         Look carefully for:
-        - Like button: Heart icon, usually green/pink, often at bottom right area (around 70-90% from left, 80-95% from top)
-        - Dislike button: X icon or cross, usually red, often at bottom left area (around 10-30% from left, 80-95% from top)
+        - Like button: Heart icon, usually with a hollow interior, always on the right hand side of the screen often on one of the elements
+        - Dislike button: X icon or cross, often at bottom left area (around 10-30% from left, 80-95% from top)
         - Scroll area: The main profile content area that can be scrolled (usually center 20-80% of screen)
         
         Provide precise location in JSON format:
@@ -233,7 +233,7 @@ def find_ui_elements_with_gemini(image_path: str, element_type: str = "like_butt
             "tap_area_size": "small/medium/large"
         }}
         
-        Be very precise with coordinates. Dating app buttons are usually in consistent locations.
+        Be very precise with coordinates..
         Express coordinates as percentages where 0.0 = left/top edge, 1.0 = right/bottom edge.
         """
         
