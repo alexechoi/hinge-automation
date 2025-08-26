@@ -286,6 +286,7 @@ class LangGraphHingeAgent:
         
         Workflow Guidelines:
         - Always start with capture_screenshot if no current screenshot
+        - The general flow is view profile > tap like or dismiss button > tap comment field > enter comment > send comment >
         - Analyze profiles before making decisions
         - Only like profiles that meet quality criteria
         - For comment interface: generate_comment → type_comment → close_text_interface → send_comment
