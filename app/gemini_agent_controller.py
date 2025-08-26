@@ -66,7 +66,9 @@ class GeminiAgentController:
             "current_screenshot": "",
             "profile_text": "",
             "profile_analysis": {},
-            "decision_reason": ""
+            "decision_reason": "",
+            "previous_profile_text": "",
+            "previous_profile_features": {}
         }
     
     def get_tool_schema(self) -> str:
@@ -378,6 +380,16 @@ class GeminiAgentController:
     
     def execute_like_tool(self) -> Dict[str, Any]:
         """Execute like action"""
+        # Store current profile data before action
+        self.session_data['previous_profile_text'] = self.session_data.get('profile_text', '')
+        current_analysis = self.session_data.get('profile_analysis', {})
+        self.session_data['previous_profile_features'] = {
+            'age': current_analysis.get('estimated_age', 0),
+            'name': current_analysis.get('name', ''),
+            'location': current_analysis.get('location', ''),
+            'interests': current_analysis.get('interests', [])
+        }
+        
         # Take fresh screenshot to get current coordinates
         fresh_screenshot = capture_screenshot(self.device, "fresh_like_detection")
         self.session_data['current_screenshot'] = fresh_screenshot
@@ -406,24 +418,66 @@ class GeminiAgentController:
         
         # Tap the like button
         tap_with_confidence(self.device, like_x, like_y, confidence)
+        time.sleep(3)  # Give more time for profile transition
+        
+        # Check if comment interface appeared first
+        immediate_screenshot = capture_screenshot(self.device, "post_like_immediate")
+        comment_ui = detect_comment_ui_elements(immediate_screenshot, GEMINI_API_KEY)
+        comment_interface_appeared = comment_ui.get('comment_field_found', False)
+        
+        if comment_interface_appeared:
+            # Comment interface appeared - like was successful
+            self.session_data['current_screenshot'] = immediate_screenshot
+            self.session_data['last_action'] = "execute_like"
+            self.session_data['likes_sent'] += 1
+            
+            return {
+                "success": True,
+                "comment_interface_appeared": True,
+                "coordinates_used": (like_x, like_y),
+                "confidence_used": confidence,
+                "message": f"Like successful - comment interface opened at ({like_x}, {like_y})"
+            }
+        
+        # No comment interface, wait a bit more and check if we moved to next profile
         time.sleep(2)
-        
-        # Verify like action
         verification_screenshot = capture_screenshot(self.device, "like_verification")
-        like_verification = verify_action_success(verification_screenshot, "like_tap", GEMINI_API_KEY)
-        
         self.session_data['current_screenshot'] = verification_screenshot
-        self.session_data['last_action'] = "execute_like"
-        self.session_data['likes_sent'] += 1
         
-        return {
-            "success": like_verification.get('like_successful', False),
-            "comment_interface_appeared": like_verification.get('interface_state') == 'comment_modal',
-            "verification": like_verification,
-            "coordinates_used": (like_x, like_y),
-            "confidence_used": confidence,
-            "message": f"Like executed at ({like_x}, {like_y}) with confidence {confidence:.2f}" + (" - comment interface opened" if like_verification.get('interface_state') == 'comment_modal' else "")
-        }
+        # Use profile change verification instead of UI-based verification
+        profile_verification = self.verify_profile_change()
+        
+        if profile_verification.get('profile_changed', False):
+            # We moved to a new profile - like was successful
+            self.session_data['last_action'] = "execute_like"
+            self.session_data['likes_sent'] += 1
+            self.current_profile_index += 1
+            self.session_data['profiles_processed'] += 1
+            self.session_data['stuck_count'] = 0
+            
+            return {
+                "success": True,
+                "comment_interface_appeared": False,
+                "profile_changed": True,
+                "verification": profile_verification,
+                "coordinates_used": (like_x, like_y),
+                "confidence_used": confidence,
+                "message": f"Like successful - moved to new profile (confidence: {profile_verification.get('confidence', 0):.2f})"
+            }
+        else:
+            # Still on same profile - like may have failed
+            self.session_data['last_action'] = "execute_like"
+            self.session_data['stuck_count'] += 1
+            
+            return {
+                "success": False,
+                "comment_interface_appeared": False,
+                "profile_changed": False,
+                "verification": profile_verification,
+                "coordinates_used": (like_x, like_y),
+                "confidence_used": confidence,
+                "message": f"Like may have failed - still on same profile"
+            }
     
     def generate_comment_tool(self, style: str = "balanced") -> Dict[str, Any]:
         """Generate comment for current profile"""
@@ -559,21 +613,70 @@ class GeminiAgentController:
     
     def execute_dislike_tool(self) -> Dict[str, Any]:
         """Execute dislike action"""
+        # Store current profile data before action
+        self.session_data['previous_profile_text'] = self.session_data.get('profile_text', '')
+        current_analysis = self.session_data.get('profile_analysis', {})
+        self.session_data['previous_profile_features'] = {
+            'age': current_analysis.get('estimated_age', 0),
+            'name': current_analysis.get('name', ''),
+            'location': current_analysis.get('location', ''),
+            'interests': current_analysis.get('interests', [])
+        }
+        
+        # Execute dislike action
         x_dislike = int(self.width * self.config.dislike_button_coords[0])
         y_dislike = int(self.height * self.config.dislike_button_coords[1])
         
         tap(self.device, x_dislike, y_dislike)
-        time.sleep(2)
+        time.sleep(3)  # Give time for profile transition
         
-        self.session_data['last_action'] = "execute_dislike"
+        # Verify dislike by checking if we moved to a new profile
+        verification_screenshot = capture_screenshot(self.device, "dislike_verification")
+        self.session_data['current_screenshot'] = verification_screenshot
         
-        return {
-            "success": True,
-            "message": f"Profile disliked: {self.session_data.get('decision_reason', 'criteria not met')}"
-        }
+        # Use profile change verification
+        profile_verification = self.verify_profile_change()
+        
+        if profile_verification.get('profile_changed', False):
+            # We moved to a new profile - dislike was successful
+            self.session_data['last_action'] = "execute_dislike"
+            self.current_profile_index += 1
+            self.session_data['profiles_processed'] += 1
+            self.session_data['stuck_count'] = 0
+            
+            return {
+                "success": True,
+                "profile_changed": True,
+                "verification": profile_verification,
+                "coordinates_used": (x_dislike, y_dislike),
+                "message": f"Dislike successful - moved to new profile: {self.session_data.get('decision_reason', 'criteria not met')}"
+            }
+        else:
+            # Still on same profile - dislike may have failed
+            self.session_data['last_action'] = "execute_dislike"
+            self.session_data['stuck_count'] += 1
+            
+            return {
+                "success": False,
+                "profile_changed": False,
+                "verification": profile_verification,
+                "coordinates_used": (x_dislike, y_dislike),
+                "message": f"Dislike may have failed - still on same profile"
+            }
     
     def navigate_to_next_tool(self) -> Dict[str, Any]:
-        """Navigate to next profile"""
+        """Navigate to next profile (used when like/dislike tools fail)"""
+        # Store current profile data before navigation
+        self.session_data['previous_profile_text'] = self.session_data.get('profile_text', '')
+        current_analysis = self.session_data.get('profile_analysis', {})
+        self.session_data['previous_profile_features'] = {
+            'age': current_analysis.get('estimated_age', 0),
+            'name': current_analysis.get('name', ''),
+            'location': current_analysis.get('location', ''),
+            'interests': current_analysis.get('interests', [])
+        }
+        
+        # Execute swipe navigation
         x1_swipe = int(self.width * 0.15)
         y1_swipe = int(self.height * 0.5)
         x2_swipe = x1_swipe
@@ -582,27 +685,32 @@ class GeminiAgentController:
         swipe(self.device, x1_swipe, y1_swipe, x2_swipe, y2_swipe)
         time.sleep(3)
         
-        # Capture new state
+        # Verify navigation using profile change detection
         nav_screenshot = capture_screenshot(self.device, "navigation_result")
-        verification = verify_action_success(nav_screenshot, "profile_change", GEMINI_API_KEY)
-        
         self.session_data['current_screenshot'] = nav_screenshot
-        self.session_data['last_action'] = "navigate_to_next"
         
-        if verification.get('profile_changed', True):
+        profile_verification = self.verify_profile_change()
+        
+        if profile_verification.get('profile_changed', False):
             self.current_profile_index += 1
             self.session_data['profiles_processed'] += 1
             self.session_data['stuck_count'] = 0
+            self.session_data['last_action'] = "navigate_to_next"
+            
             return {
                 "success": True,
                 "new_profile_loaded": True,
-                "message": f"Navigated to profile {self.current_profile_index + 1}"
+                "verification": profile_verification,
+                "message": f"Navigation successful - moved to profile {self.current_profile_index + 1}"
             }
         else:
             self.session_data['stuck_count'] += 1
+            self.session_data['last_action'] = "navigate_to_next"
+            
             return {
                 "success": False,
                 "new_profile_loaded": False,
+                "verification": profile_verification,
                 "message": "Navigation failed - still on same profile"
             }
     
@@ -642,6 +750,99 @@ class GeminiAgentController:
         return {
             "success": True,
             "message": "Recovery attempt completed - used swipe patterns only"
+        }
+    
+    def verify_profile_change(self) -> Dict[str, Any]:
+        """Verify if we've moved to a new profile by comparing content"""
+        if not self.session_data['current_screenshot']:
+            return {
+                "success": False,
+                "profile_changed": False,
+                "message": "No screenshot available for verification"
+            }
+        
+        # Extract current profile info
+        current_text = extract_text_from_image_gemini(
+            self.session_data['current_screenshot'], GEMINI_API_KEY
+        )
+        
+        current_analysis = analyze_dating_ui_with_gemini(
+            self.session_data['current_screenshot'], GEMINI_API_KEY
+        )
+        
+        # Get previous profile info
+        previous_text = self.session_data.get('previous_profile_text', '')
+        previous_features = self.session_data.get('previous_profile_features', {})
+        
+        # If this is the first profile, consider it a new profile
+        if not previous_text and not previous_features:
+            return {
+                "success": True,
+                "profile_changed": True,
+                "confidence": 1.0,
+                "message": "First profile - treating as new profile"
+            }
+        
+        # Compare profiles to detect change
+        profile_changed = False
+        reasons = []
+        
+        # Text comparison - significant difference indicates new profile
+        if current_text and previous_text:
+            # Calculate text similarity (simple word overlap)
+            current_words = set(current_text.lower().split())
+            previous_words = set(previous_text.lower().split())
+            
+            if len(current_words) > 0 and len(previous_words) > 0:
+                overlap = len(current_words.intersection(previous_words))
+                similarity = overlap / max(len(current_words), len(previous_words))
+                
+                if similarity < 0.3:  # Less than 30% word overlap = different profile
+                    profile_changed = True
+                    reasons.append(f"Text similarity low: {similarity:.2f}")
+        
+        # Feature comparison
+        current_features = {
+            'age': current_analysis.get('estimated_age', 0),
+            'name': current_analysis.get('name', ''),
+            'location': current_analysis.get('location', ''),
+            'interests': current_analysis.get('interests', [])
+        }
+        
+        if previous_features:
+            # Compare key features
+            if (current_features['name'] != previous_features.get('name', '') and 
+                current_features['name'] and previous_features.get('name')):
+                profile_changed = True
+                reasons.append("Different name detected")
+            
+            if (abs(current_features['age'] - previous_features.get('age', 0)) > 5 and 
+                current_features['age'] > 0 and previous_features.get('age', 0) > 0):
+                profile_changed = True
+                reasons.append("Significant age difference")
+            
+            # Interest overlap check
+            current_interests = set(current_features.get('interests', []))
+            previous_interests = set(previous_features.get('interests', []))
+            if current_interests and previous_interests:
+                interest_overlap = len(current_interests.intersection(previous_interests))
+                interest_similarity = interest_overlap / max(len(current_interests), len(previous_interests))
+                if interest_similarity < 0.2:
+                    profile_changed = True
+                    reasons.append(f"Interest overlap low: {interest_similarity:.2f}")
+        
+        # Confidence calculation
+        confidence = 0.8 if profile_changed else 0.3
+        if len(reasons) > 1:
+            confidence = min(0.95, confidence + 0.1 * (len(reasons) - 1))
+        
+        return {
+            "success": True,
+            "profile_changed": profile_changed,
+            "confidence": confidence,
+            "reasons": reasons,
+            "current_features": current_features,
+            "message": f"Profile {'changed' if profile_changed else 'unchanged'}: {', '.join(reasons) if reasons else 'similar content detected'}"
         }
     
     def verify_action_tool(self, action_type: str = "general") -> Dict[str, Any]:
