@@ -370,14 +370,31 @@ class GeminiAgentController:
     
     def execute_like_tool(self, **kwargs) -> Dict[str, Any]:
         """Execute like action"""
-        if 'like_button_coords' not in self.session_data:
+        # Take fresh screenshot to get current coordinates
+        fresh_screenshot = capture_screenshot(self.device, "fresh_like_detection")
+        self.session_data['current_screenshot'] = fresh_screenshot
+        
+        # Re-detect like button on current screen
+        like_button_info = find_ui_elements_with_gemini(
+            fresh_screenshot, "like_button", GEMINI_API_KEY
+        )
+        
+        if not like_button_info.get('element_found'):
             return {
                 "success": False,
-                "message": "Like button coordinates not available"
+                "message": "Like button not detected on current screen"
             }
         
-        like_x, like_y = self.session_data['like_button_coords']
-        confidence = self.session_data.get('like_button_confidence', 0.8)
+        confidence = like_button_info.get('confidence', 0)
+        if confidence < self.config.min_button_confidence:
+            return {
+                "success": False,
+                "confidence": confidence,
+                "message": f"Like button confidence too low: {confidence}"
+            }
+        
+        like_x = int(like_button_info['approximate_x_percent'] * self.width)
+        like_y = int(like_button_info['approximate_y_percent'] * self.height)
         
         # Tap the like button
         tap_with_confidence(self.device, like_x, like_y, confidence)
@@ -395,7 +412,9 @@ class GeminiAgentController:
             "success": like_verification.get('like_successful', False),
             "comment_interface_appeared": like_verification.get('interface_state') == 'comment_modal',
             "verification": like_verification,
-            "message": "Like executed" + (" - comment interface opened" if like_verification.get('interface_state') == 'comment_modal' else "")
+            "coordinates_used": (like_x, like_y),
+            "confidence_used": confidence,
+            "message": f"Like executed at ({like_x}, {like_y}) with confidence {confidence:.2f}" + (" - comment interface opened" if like_verification.get('interface_state') == 'comment_modal' else "")
         }
     
     def generate_comment_tool(self, style: str = "balanced", **kwargs) -> Dict[str, Any]:
