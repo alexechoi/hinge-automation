@@ -1,3 +1,5 @@
 *.env
 *.jpeg
 *.png
+*.pyc
+app/generated_comments.json
