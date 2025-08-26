@@ -159,6 +159,116 @@ def input_text(device, text):
     device.shell(f'input text "{text}"')
 
 
+def input_text_robust(device, text, max_attempts=3):
+    """
+    Robust text input with multiple methods and verification
+    
+    Args:
+        device: ADB device object
+        text: Text to input
+        max_attempts: Maximum retry attempts
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'method_used': str,
+            'attempts_made': int,
+            'text_sent': str
+        }
+    """
+    if not text or not text.strip():
+        return {
+            'success': False,
+            'method_used': 'none',
+            'attempts_made': 0,
+            'text_sent': '',
+            'error': 'Empty text provided'
+        }
+    
+    # Clean and prepare text
+    original_text = text
+    methods = [
+        ('adb_shell_direct', lambda t: device.shell(f'input text "{t}"')),
+        ('adb_shell_escaped', lambda t: device.shell(f"input text '{t}'")),
+        ('keyevent_typing', lambda t: _type_with_keyevents(device, t)),
+    ]
+    
+    for attempt in range(max_attempts):
+        for method_name, method_func in methods:
+            try:
+                print(f"📝 Attempt {attempt + 1}/{max_attempts} - Method: {method_name}")
+                print(f"📝 Text to input: {original_text[:50]}...")
+                
+                # Prepare text based on method
+                if method_name == 'adb_shell_direct':
+                    # Escape quotes and special characters
+                    prepared_text = original_text.replace('"', '\\"').replace("'", "\\'").replace('`', '\\`')
+                elif method_name == 'adb_shell_escaped':
+                    # Use single quotes and escape single quotes
+                    prepared_text = original_text.replace("'", "'\"'\"'")
+                else:
+                    prepared_text = original_text
+                
+                # Execute the method
+                method_func(prepared_text)
+                time.sleep(1.5)  # Give time for text to appear
+                
+                print(f"✅ Text input successful with {method_name}")
+                return {
+                    'success': True,
+                    'method_used': method_name,
+                    'attempts_made': attempt + 1,
+                    'text_sent': original_text
+                }
+                
+            except Exception as e:
+                print(f"❌ Method {method_name} failed: {e}")
+                time.sleep(0.5)
+                continue
+    
+    # All methods failed
+    print(f"❌ All text input methods failed after {max_attempts} attempts")
+    return {
+        'success': False,
+        'method_used': 'failed',
+        'attempts_made': max_attempts,
+        'text_sent': original_text,
+        'error': 'All input methods failed'
+    }
+
+
+def _type_with_keyevents(device, text):
+    """Type text using individual key events (slower but more reliable)"""
+    for char in text:
+        if char == ' ':
+            device.shell("input keyevent KEYCODE_SPACE")
+        elif char.isalpha():
+            # Handle letters
+            keycode = f"KEYCODE_{char.upper()}"
+            device.shell(f"input keyevent {keycode}")
+        elif char.isdigit():
+            # Handle numbers
+            keycodes = {
+                '0': 'KEYCODE_0', '1': 'KEYCODE_1', '2': 'KEYCODE_2',
+                '3': 'KEYCODE_3', '4': 'KEYCODE_4', '5': 'KEYCODE_5', 
+                '6': 'KEYCODE_6', '7': 'KEYCODE_7', '8': 'KEYCODE_8', '9': 'KEYCODE_9'
+            }
+            device.shell(f"input keyevent {keycodes[char]}")
+        elif char in ".,!?":
+            # Handle basic punctuation
+            punctuation_codes = {
+                '.': 'KEYCODE_PERIOD',
+                ',': 'KEYCODE_COMMA', 
+                '!': 'KEYCODE_1',  # Shift + 1
+                '?': 'KEYCODE_SLASH'  # Shift + /
+            }
+            if char in ['!', '?']:
+                device.shell("input keyevent KEYCODE_SHIFT_LEFT")
+            device.shell(f"input keyevent {punctuation_codes[char]}")
+        # Skip other special characters
+        time.sleep(0.1)  # Small delay between keystrokes
+
+
 def swipe(device, x1, y1, x2, y2, duration=500):
     device.shell(f"input swipe {x1} {y1} {x2} {y2} {duration}")
 
@@ -255,6 +365,86 @@ def detect_like_button_cv(screenshot_path):
         
     except Exception as e:
         print(f"❌ CV like button detection failed: {e}")
+        return {'found': False, 'confidence': 0.0}
+
+
+def detect_send_button_cv(screenshot_path):
+    """
+    Detect send button using OpenCV template matching
+    
+    Returns:
+        dict: {
+            'found': bool,
+            'x': int, 
+            'y': int,
+            'confidence': float,
+            'width': int,
+            'height': int
+        }
+    """
+    try:
+        # Load template image
+        template_path = "assets/send_button.png"
+        if not os.path.exists(template_path):
+            print(f"❌ Send button template not found: {template_path}")
+            return {'found': False, 'confidence': 0.0}
+        
+        # Load screenshot and template
+        screenshot = cv2.imread(screenshot_path)
+        template = cv2.imread(template_path)
+        
+        if screenshot is None:
+            print(f"❌ Could not load screenshot: {screenshot_path}")
+            return {'found': False, 'confidence': 0.0}
+            
+        if template is None:
+            print(f"❌ Could not load template: {template_path}")
+            return {'found': False, 'confidence': 0.0}
+        
+        # Get template dimensions
+        template_height, template_width = template.shape[:2]
+        
+        # Convert to grayscale for better matching
+        screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        
+        # Perform template matching
+        result = cv2.matchTemplate(screenshot_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+        
+        # Find the best match
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        
+        # max_val is the confidence score (0-1)
+        confidence = float(max_val)
+        
+        # Calculate center coordinates
+        top_left = max_loc
+        center_x = top_left[0] + template_width // 2
+        center_y = top_left[1] + template_height // 2
+        
+        # Consider it found if confidence is above threshold
+        confidence_threshold = 0.6  # Lower threshold for send button as it may have different styles
+        found = confidence >= confidence_threshold
+        
+        print(f"🎯 CV Send Button Detection:")
+        print(f"   📍 Center: ({center_x}, {center_y})")
+        print(f"   📐 Template size: {template_width}x{template_height}")
+        print(f"   🎯 Confidence: {confidence:.3f}")
+        print(f"   ✅ Found: {found} (threshold: {confidence_threshold})")
+        
+        return {
+            'found': found,
+            'x': center_x,
+            'y': center_y, 
+            'confidence': confidence,
+            'width': template_width,
+            'height': template_height,
+            'top_left_x': top_left[0],
+            'top_left_y': top_left[1]
+        }
+        
+    except Exception as e:
+        print(f"❌ CV send button detection failed: {e}")
         return {'found': False, 'confidence': 0.0}
 
 

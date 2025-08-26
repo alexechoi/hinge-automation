@@ -17,7 +17,7 @@ from config import GEMINI_API_KEY
 from helper_functions import (
     connect_device, get_screen_resolution, open_hinge,
     capture_screenshot, tap, tap_with_confidence, swipe,
-    dismiss_keyboard, clear_screenshots_directory, detect_like_button_cv
+    dismiss_keyboard, clear_screenshots_directory, detect_like_button_cv, detect_send_button_cv, input_text_robust
 )
 from gemini_analyzer import (
     extract_text_from_image_gemini, analyze_dating_ui_with_gemini,
@@ -106,7 +106,10 @@ class LangGraphHingeAgent:
         workflow.add_node("detect_like_button", self.detect_like_button_node)
         workflow.add_node("execute_like", self.execute_like_node)
         workflow.add_node("generate_comment", self.generate_comment_node)
-        workflow.add_node("handle_comment_interface", self.handle_comment_interface_node)
+        workflow.add_node("type_comment", self.type_comment_node)
+        workflow.add_node("close_text_interface", self.close_text_interface_node)
+        workflow.add_node("send_comment", self.send_comment_node)
+        workflow.add_node("send_like_without_comment", self.send_like_without_comment_node)
         workflow.add_node("execute_dislike", self.execute_dislike_node)
         workflow.add_node("navigate_to_next", self.navigate_to_next_node)
         workflow.add_node("verify_profile_change", self.verify_profile_change_node)
@@ -137,7 +140,10 @@ class LangGraphHingeAgent:
                 "detect_like_button": "detect_like_button",
                 "execute_like": "execute_like",
                 "generate_comment": "generate_comment",
-                "handle_comment_interface": "handle_comment_interface",
+                "type_comment": "type_comment",
+                "close_text_interface": "close_text_interface",
+                "send_comment": "send_comment",
+                "send_like_without_comment": "send_like_without_comment",
                 "execute_dislike": "execute_dislike",
                 "navigate_to_next": "navigate_to_next",
                 "verify_profile_change": "verify_profile_change",
@@ -149,7 +155,7 @@ class LangGraphHingeAgent:
         # Add edges back to Gemini decision node from all action nodes
         action_nodes = [
             "capture_screenshot", "analyze_profile", "scroll_profile", "make_like_decision",
-            "detect_like_button", "execute_like", "generate_comment", "handle_comment_interface",
+            "detect_like_button", "execute_like", "generate_comment", "type_comment", "close_text_interface", "send_comment", "send_like_without_comment",
             "execute_dislike", "navigate_to_next", "verify_profile_change", "recover_from_stuck"
         ]
         
@@ -268,18 +274,22 @@ class LangGraphHingeAgent:
         5. detect_like_button - Find like button coordinates
         6. execute_like - Tap the like button
         7. generate_comment - Create personalized comment
-        8. handle_comment_interface - Send comment through interface
-        9. execute_dislike - Dislike/skip current profile
-        10. navigate_to_next - Move to next profile
-        11. verify_profile_change - Check if we moved to new profile
-        12. recover_from_stuck - Attempt recovery when stuck
-        13. finalize - End the session
+        8. type_comment - Input comment text into field
+        9. close_text_interface - Close keyboard/text input interface
+        10. send_comment - Find and tap send button using CV
+        11. send_like_without_comment - Send like without typing comment (fallback)
+        12. execute_dislike - Dislike/skip current profile
+        13. navigate_to_next - Move to next profile
+        14. verify_profile_change - Check if we moved to new profile
+        15. recover_from_stuck - Attempt recovery when stuck
+        16. finalize - End the session
         
         Workflow Guidelines:
         - Always start with capture_screenshot if no current screenshot
         - Analyze profiles before making decisions
         - Only like profiles that meet quality criteria
-        - Generate comments for liked profiles when interface appears
+        - For comment interface: generate_comment → type_comment → close_text_interface → send_comment
+        - If comment typing fails: use send_like_without_comment as fallback
         - Use recovery when stuck count > 2
         - Finalize when max profiles reached or too many errors
         """
@@ -660,71 +670,137 @@ class LangGraphHingeAgent:
             "action_successful": True
         }
     
-    def handle_comment_interface_node(self, state: HingeAgentState) -> HingeAgentState:
-        """Handle comment interface after like"""
-        print("💬 Handling comment interface...")
+    def type_comment_node(self, state: HingeAgentState) -> HingeAgentState:
+        """Type comment text into the comment field"""
+        print("⌨️ Typing comment into field...")
         
         if not state.get('generated_comment'):
+            print("❌ No comment to type")
             return {
                 **state,
-                "last_action": "handle_comment_interface",
+                "last_action": "type_comment",
                 "action_successful": False
             }
         
         comment = state['generated_comment']
-        print(f"💬 Sending comment: {comment}")
+        print(f"💬 Typing comment: {comment[:50]}...")
         
         try:
             # Fresh screenshot to see current interface
-            fresh_screenshot = capture_screenshot(state["device"], "comment_interface_fresh")
+            fresh_screenshot = capture_screenshot(state["device"], "comment_interface_typing")
+            
             comment_ui = detect_comment_ui_elements(fresh_screenshot, GEMINI_API_KEY)
             
             if not comment_ui.get('comment_field_found'):
+                print("❌ Comment field not found")
                 return {
                     **state,
                     "current_screenshot": fresh_screenshot,
-                    "last_action": "handle_comment_interface",
+                    "last_action": "type_comment",
                     "action_successful": False
                 }
             
-            # Tap comment field
+            # Tap comment field to focus
             comment_x = int(comment_ui['comment_field_x'] * state["width"])
             comment_y = int(comment_ui['comment_field_y'] * state["height"])
+            print(f"🎯 Tapping comment field at ({comment_x}, {comment_y})")
+            
             tap_with_confidence(state["device"], comment_x, comment_y, 
                               comment_ui.get('comment_field_confidence', 0.8))
             time.sleep(2)
             
-            # Input text using reliable method
+            # Clear any existing text
             state["device"].shell("input keyevent KEYCODE_CTRL_A")
             time.sleep(0.5)
             
-            escaped_comment = comment.replace('"', '\\"').replace("'", "\\'")
-            state["device"].shell(f'input text "{escaped_comment}"')
-            time.sleep(2)
+            # Use robust text input with multiple fallback methods
+            input_result = input_text_robust(state["device"], comment, max_attempts=2)
             
-            # Dismiss keyboard
-            dismiss_keyboard(state["device"], state["width"], state["height"])
-            time.sleep(2)
-            
-            # Find and tap Send Like button
-            send_screenshot = capture_screenshot(state["device"], "send_button_detection")
-            send_button_info = find_ui_elements_with_gemini(
-                send_screenshot, "send_like_button", GEMINI_API_KEY
-            )
-            
-            if send_button_info.get('element_found'):
-                send_x = int(send_button_info['approximate_x_percent'] * state["width"])
-                send_y = int(send_button_info['approximate_y_percent'] * state["height"])
+            if input_result['success']:
+                print(f"✅ Comment typed successfully using {input_result['method_used']}")
             else:
-                # Fallback coordinates
-                send_x = int(state["width"] * 0.67)
-                send_y = int(state["height"] * 0.75)
+                print(f"❌ Comment typing failed: {input_result.get('error', 'Unknown error')}")
+                return {
+                    **state,
+                    "current_screenshot": fresh_screenshot,
+                    "last_action": "type_comment",
+                    "action_successful": False,
+                    "errors_encountered": state["errors_encountered"] + 1
+                }
+            return {
+                **state,
+                "current_screenshot": fresh_screenshot,
+                "last_action": "type_comment",
+                "action_successful": True
+            }
             
-            tap_with_confidence(state["device"], send_x, send_y, 0.8)
+        except Exception as e:
+            print(f"❌ Comment typing failed: {e}")
+            return {
+                **state,
+                "errors_encountered": state["errors_encountered"] + 1,
+                "last_action": "type_comment",
+                "action_successful": False
+            }
+    
+    def close_text_interface_node(self, state: HingeAgentState) -> HingeAgentState:
+        """Close keyboard and text input interface"""
+        print("🔽 Closing text input interface...")
+        
+        try:
+            # Dismiss keyboard using multiple methods
+            success = dismiss_keyboard(state["device"], state["width"], state["height"])
+            time.sleep(2)
+            
+            # Take screenshot to verify keyboard is closed
+            post_close_screenshot = capture_screenshot(state["device"], "post_keyboard_close")
+            
+            print(f"✅ Text interface closed (success: {success})")
+            return {
+                **state,
+                "current_screenshot": post_close_screenshot,
+                "last_action": "close_text_interface",
+                "action_successful": True
+            }
+            
+        except Exception as e:
+            print(f"❌ Failed to close text interface: {e}")
+            return {
+                **state,
+                "errors_encountered": state["errors_encountered"] + 1,
+                "last_action": "close_text_interface",
+                "action_successful": False
+            }
+    
+    def send_comment_node(self, state: HingeAgentState) -> HingeAgentState:
+        """Find and tap send button using OpenCV"""
+        print("📤 Finding and tapping send button with OpenCV...")
+        
+        try:
+            # Take fresh screenshot to find send button
+            send_screenshot = capture_screenshot(state["device"], "send_button_detection")
+            
+            # Use OpenCV to detect send button
+            cv_result = detect_send_button_cv(send_screenshot)
+            
+            if cv_result.get('found'):
+                send_x = cv_result['x']
+                send_y = cv_result['y']
+                confidence = cv_result['confidence']
+                print(f"✅ Send button found with CV at ({send_x}, {send_y}) - confidence: {confidence:.3f}")
+            else:
+                # Fallback coordinates based on typical Send Like button position
+                send_x = int(state["width"] * 0.67)  # Right side of screen
+                send_y = int(state["height"] * 0.75)  # Lower portion
+                confidence = 0.5
+                print(f"⚠️ Using fallback send button coordinates ({send_x}, {send_y})")
+            
+            # Tap the send button
+            tap_with_confidence(state["device"], send_x, send_y, confidence)
             time.sleep(3)
             
-            # Verify comment was sent
-            verification_screenshot = capture_screenshot(state["device"], "comment_verification")
+            # Verify comment was sent by checking if we moved to new profile or interface closed
+            verification_screenshot = capture_screenshot(state["device"], "send_comment_verification")
             
             # Use profile change verification
             profile_verification = self._verify_profile_change_internal({
@@ -741,11 +817,11 @@ class LangGraphHingeAgent:
                     "current_profile_index": state["current_profile_index"] + 1,
                     "profiles_processed": state["profiles_processed"] + 1,
                     "stuck_count": 0,
-                    "last_action": "handle_comment_interface",
+                    "last_action": "send_comment",
                     "action_successful": True
                 }
             else:
-                # Check if comment interface is gone
+                # Check if comment interface is gone (comment sent but stayed on profile)
                 still_in_comment = detect_comment_ui_elements(verification_screenshot, GEMINI_API_KEY)
                 
                 if not still_in_comment.get('comment_field_found'):
@@ -754,24 +830,128 @@ class LangGraphHingeAgent:
                         **state,
                         "current_screenshot": verification_screenshot,
                         "comments_sent": state["comments_sent"] + 1,
-                        "last_action": "handle_comment_interface",
+                        "last_action": "send_comment",
                         "action_successful": True
                     }
                 else:
-                    print("❌ Comment sending failed - still in interface")
+                    print("⚠️ Comment sending may have failed - still in interface")
                     return {
                         **state,
                         "current_screenshot": verification_screenshot,
-                        "last_action": "handle_comment_interface",
+                        "last_action": "send_comment",
                         "action_successful": False
                     }
             
         except Exception as e:
-            print(f"❌ Comment handling failed: {e}")
+            print(f"❌ Send comment failed: {e}")
             return {
                 **state,
                 "errors_encountered": state["errors_encountered"] + 1,
-                "last_action": "handle_comment_interface",
+                "last_action": "send_comment",
+                "action_successful": False
+            }
+    
+    def send_like_without_comment_node(self, state: HingeAgentState) -> HingeAgentState:
+        """Send like without comment as fallback when comment typing fails"""
+        print("💖 Sending like without comment (fallback mode)...")
+        
+        try:
+            # Close any open comment interface first
+            fresh_screenshot = capture_screenshot(state["device"], "fallback_like_before_close")
+            
+            # Check if comment interface is still open
+            comment_ui = detect_comment_ui_elements(fresh_screenshot, GEMINI_API_KEY)
+            
+            if comment_ui.get('comment_field_found'):
+                print("📱 Closing comment interface...")
+                # Try to close comment interface using back key or tap outside
+                state["device"].shell("input keyevent KEYCODE_BACK")
+                time.sleep(2)
+                
+                # Verify interface closed
+                post_close_screenshot = capture_screenshot(state["device"], "fallback_after_close")
+                comment_ui_check = detect_comment_ui_elements(post_close_screenshot, GEMINI_API_KEY)
+                
+                if comment_ui_check.get('comment_field_found'):
+                    print("⚠️ Comment interface still open, trying tap outside...")
+                    # Tap in upper area to close interface
+                    tap(state["device"], int(state["width"] * 0.5), int(state["height"] * 0.2))
+                    time.sleep(2)
+            
+            # Take fresh screenshot for like button detection
+            final_screenshot = capture_screenshot(state["device"], "fallback_like_detection")
+            
+            # Use CV-based like button detection
+            cv_result = detect_like_button_cv(final_screenshot)
+            
+            if not cv_result.get('found'):
+                print("❌ Like button not found with CV in fallback mode")
+                return {
+                    **state,
+                    "current_screenshot": final_screenshot,
+                    "last_action": "send_like_without_comment",
+                    "action_successful": False
+                }
+            
+            confidence = cv_result.get('confidence', 0)
+            like_x = cv_result['x']
+            like_y = cv_result['y']
+            
+            print(f"🎯 Like button detected in fallback mode:")
+            print(f"   📍 Coordinates: ({like_x}, {like_y})")
+            print(f"   🎯 CV Confidence: {confidence:.3f}")
+            
+            # Execute the like tap
+            tap_with_confidence(state["device"], like_x, like_y, confidence)
+            time.sleep(3)
+            
+            # Verify like was successful by checking for profile change
+            verification_screenshot = capture_screenshot(state["device"], "fallback_like_verification")
+            
+            # Store previous profile data for verification
+            previous_profile_text = state.get('profile_text', '')
+            current_analysis = state.get('profile_analysis', {})
+            previous_profile_features = {
+                'age': current_analysis.get('estimated_age', 0),
+                'name': current_analysis.get('name', ''),
+                'location': current_analysis.get('location', ''),
+                'interests': current_analysis.get('interests', [])
+            }
+            
+            profile_verification = self._verify_profile_change_internal({
+                **state,
+                "current_screenshot": verification_screenshot,
+                "previous_profile_text": previous_profile_text,
+                "previous_profile_features": previous_profile_features
+            })
+            
+            if profile_verification.get('profile_changed', False):
+                print("✅ Like sent successfully without comment - moved to new profile")
+                return {
+                    **state,
+                    "current_screenshot": verification_screenshot,
+                    "likes_sent": state["likes_sent"] + 1,
+                    "current_profile_index": state["current_profile_index"] + 1,
+                    "profiles_processed": state["profiles_processed"] + 1,
+                    "stuck_count": 0,
+                    "last_action": "send_like_without_comment",
+                    "action_successful": True
+                }
+            else:
+                print("⚠️ Fallback like may have failed - still on same profile")
+                return {
+                    **state,
+                    "current_screenshot": verification_screenshot,
+                    "last_action": "send_like_without_comment",
+                    "action_successful": False
+                }
+                
+        except Exception as e:
+            print(f"❌ Send like without comment failed: {e}")
+            return {
+                **state,
+                "errors_encountered": state["errors_encountered"] + 1,
+                "last_action": "send_like_without_comment",
                 "action_successful": False
             }
     
