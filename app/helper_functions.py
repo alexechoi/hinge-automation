@@ -1,11 +1,35 @@
 from ppadb.client import Client as AdbClient
 import time
-import cv2
 import numpy as np
 from dotenv import load_dotenv
 import os
+import glob
 
 load_dotenv()
+
+
+def clear_screenshots_directory():
+    """
+    Clear all old screenshots from the images directory to prevent confusion
+    """
+    try:
+        if os.path.exists("images"):
+            # Remove all PNG files in the images directory
+            old_screenshots = glob.glob("images/*.png")
+            count = len(old_screenshots)
+            
+            if count > 0:
+                print(f"🗑️  Clearing {count} old screenshots from images directory...")
+                for screenshot in old_screenshots:
+                    os.remove(screenshot)
+                print("✅ Screenshots directory cleared")
+            else:
+                print("📁 Images directory already clean")
+        else:
+            print("📁 Images directory doesn't exist - will be created when needed")
+            
+    except Exception as e:
+        print(f"⚠️  Warning: Could not clear screenshots directory: {e}")
 
 
 # Use to connect directly
@@ -24,12 +48,24 @@ def connect_device(user_ip_address="127.0.0.1"):
 
 
 def capture_screenshot(device, filename):
+    """
+    Capture screenshot with timestamp to prevent confusion between screenshots
+    """
+    timestamp = int(time.time() * 1000)  # millisecond timestamp
+    
     result = device.screencap()
     # Ensure images directory exists
     os.makedirs("images", exist_ok=True)
-    with open("images/" + str(filename) + ".png", "wb") as fp:
+    
+    # Add timestamp to filename for uniqueness
+    timestamped_filename = f"{timestamp}_{filename}.png"
+    filepath = f"images/{timestamped_filename}"
+    
+    with open(filepath, "wb") as fp:
         fp.write(result)
-    return "images/" + str(filename) + ".png"
+    
+    print(f"📸 Screenshot saved: {filepath}")
+    return filepath
 
 
 def tap(device, x, y):
