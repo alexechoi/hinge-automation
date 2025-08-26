@@ -1,6 +1,6 @@
 *.env
 *.jpeg
-*.png
+images/*.png
 *.pyc
 app/generated_comments.json
 *__pycache__
