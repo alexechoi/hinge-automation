@@ -7,7 +7,7 @@ This uses Gemini AI to intelligently select and execute tools for dating app aut
 
 import asyncio
 import argparse
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from gemini_agent_controller import GeminiAgentController
 from agent_config import AgentConfig, DEFAULT_CONFIG, FAST_CONFIG, CONSERVATIVE_CONFIG

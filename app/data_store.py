@@ -31,27 +31,6 @@ def store_generated_comment(comment_id, profile_text, generated_comment, style_u
         json.dump(data, f, indent=2)
 
 
-def store_feedback(comment_id, outcome: str):
-    """
-    Store whether the user responded positively ("match") or negatively.
-    """
-    feedback_record = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "comment_id": comment_id,
-        "outcome": outcome,
-    }
-
-    if not os.path.exists(FEEDBACK_FILE):
-        with open(FEEDBACK_FILE, "w") as f:
-            json.dump([], f)
-
-    with open(FEEDBACK_FILE, "r+") as f:
-        feedback_data = json.load(f)
-        feedback_data.append(feedback_record)
-        f.seek(0)
-        json.dump(feedback_data, f, indent=2)
-
-
 def calculate_template_success_rates():
     """
     Merge data from generated_comments.json and feedback_records.json
