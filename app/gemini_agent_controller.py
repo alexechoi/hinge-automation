@@ -254,7 +254,7 @@ class GeminiAgentController:
                 }
     
     # Tool implementations
-    def capture_screenshot_tool(self, **kwargs) -> Dict[str, Any]:
+    def capture_screenshot_tool(self) -> Dict[str, Any]:
         """Capture current screen screenshot"""
         screenshot_path = capture_screenshot(
             self.device,
@@ -270,7 +270,7 @@ class GeminiAgentController:
             "message": "Screenshot captured successfully"
         }
     
-    def analyze_profile_tool(self, **kwargs) -> Dict[str, Any]:
+    def analyze_profile_tool(self) -> Dict[str, Any]:
         """Analyze profile from current screenshot"""
         if not self.session_data['current_screenshot']:
             return {"success": False, "message": "No screenshot available"}
@@ -297,7 +297,7 @@ class GeminiAgentController:
             "message": f"Profile analyzed: quality {ui_analysis.get('profile_quality_score', 0)}/10"
         }
     
-    def scroll_profile_tool(self, direction: str = "down", **kwargs) -> Dict[str, Any]:
+    def scroll_profile_tool(self, direction: str = "down") -> Dict[str, Any]:
         """Scroll to see more profile content"""
         scroll_analysis = analyze_profile_scroll_content(
             self.session_data['current_screenshot'], GEMINI_API_KEY
@@ -334,10 +334,18 @@ class GeminiAgentController:
             "message": "Profile scrolled and content updated"
         }
     
-    def detect_like_button_tool(self, **kwargs) -> Dict[str, Any]:
+    def detect_like_button_tool(self) -> Dict[str, Any]:
         """Detect like button location"""
+        # Take fresh screenshot to get current button location
+        fresh_screenshot = capture_screenshot(
+            self.device,
+            f"like_button_detection_{self.current_profile_index}"
+        )
+        
+        self.session_data['current_screenshot'] = fresh_screenshot
+        
         like_button_info = find_ui_elements_with_gemini(
-            self.session_data['current_screenshot'], "like_button", GEMINI_API_KEY
+            fresh_screenshot, "like_button", GEMINI_API_KEY
         )
         
         if not like_button_info.get('element_found'):
@@ -368,7 +376,7 @@ class GeminiAgentController:
             "message": f"Like button found at ({like_x}, {like_y}) with confidence {confidence}"
         }
     
-    def execute_like_tool(self, **kwargs) -> Dict[str, Any]:
+    def execute_like_tool(self) -> Dict[str, Any]:
         """Execute like action"""
         # Take fresh screenshot to get current coordinates
         fresh_screenshot = capture_screenshot(self.device, "fresh_like_detection")
@@ -417,7 +425,7 @@ class GeminiAgentController:
             "message": f"Like executed at ({like_x}, {like_y}) with confidence {confidence:.2f}" + (" - comment interface opened" if like_verification.get('interface_state') == 'comment_modal' else "")
         }
     
-    def generate_comment_tool(self, style: str = "balanced", **kwargs) -> Dict[str, Any]:
+    def generate_comment_tool(self, style: str = "balanced") -> Dict[str, Any]:
         """Generate comment for current profile"""
         if not self.session_data['profile_text']:
             return {
@@ -448,7 +456,7 @@ class GeminiAgentController:
             "message": f"Comment generated: {comment[:50]}..."
         }
     
-    def handle_comment_interface_tool(self, **kwargs) -> Dict[str, Any]:
+    def handle_comment_interface_tool(self) -> Dict[str, Any]:
         """Handle comment interface after like"""
         if 'generated_comment' not in self.session_data:
             return {
@@ -549,7 +557,7 @@ class GeminiAgentController:
             "message": "Comment interface handling failed"
         }
     
-    def execute_dislike_tool(self, **kwargs) -> Dict[str, Any]:
+    def execute_dislike_tool(self) -> Dict[str, Any]:
         """Execute dislike action"""
         x_dislike = int(self.width * self.config.dislike_button_coords[0])
         y_dislike = int(self.height * self.config.dislike_button_coords[1])
@@ -564,7 +572,7 @@ class GeminiAgentController:
             "message": f"Profile disliked: {self.session_data.get('decision_reason', 'criteria not met')}"
         }
     
-    def navigate_to_next_tool(self, **kwargs) -> Dict[str, Any]:
+    def navigate_to_next_tool(self) -> Dict[str, Any]:
         """Navigate to next profile"""
         x1_swipe = int(self.width * 0.15)
         y1_swipe = int(self.height * 0.5)
@@ -598,7 +606,7 @@ class GeminiAgentController:
                 "message": "Navigation failed - still on same profile"
             }
     
-    def recover_from_stuck_tool(self, **kwargs) -> Dict[str, Any]:
+    def recover_from_stuck_tool(self) -> Dict[str, Any]:
         """Attempt recovery when stuck"""
         print("🔄 Attempting recovery from stuck state...")
         
@@ -636,7 +644,7 @@ class GeminiAgentController:
             "message": "Recovery attempt completed - used swipe patterns only"
         }
     
-    def verify_action_tool(self, action_type: str = "general", **kwargs) -> Dict[str, Any]:
+    def verify_action_tool(self, action_type: str = "general") -> Dict[str, Any]:
         """Verify if previous action was successful"""
         if not self.session_data['current_screenshot']:
             return {
@@ -712,7 +720,20 @@ class GeminiAgentController:
                 # Execute the tool Gemini selected
                 if tool_name in self.available_tools:
                     tool_function = self.available_tools[tool_name]
-                    result = tool_function(**parameters)
+                    
+                    # Handle different parameter signatures for different tools
+                    if tool_name == "generate_comment":
+                        style = parameters.get('style', 'balanced')
+                        result = tool_function(style=style)
+                    elif tool_name == "verify_action":
+                        action_type = parameters.get('action_type', 'general')
+                        result = tool_function(action_type=action_type)
+                    elif tool_name == "scroll_profile":
+                        direction = parameters.get('direction', 'down')
+                        result = tool_function(direction=direction)
+                    else:
+                        # Most tools don't take parameters
+                        result = tool_function()
                     
                     print(f"🔧 Tool result: {result.get('message', 'No message')}")
                     
