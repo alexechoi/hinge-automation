@@ -22,7 +22,7 @@ from helper_functions import (
 from gemini_analyzer import (
     extract_text_from_image_gemini, analyze_dating_ui_with_gemini,
     find_ui_elements_with_gemini, analyze_profile_scroll_content,
-    detect_comment_ui_elements, generate_comment_gemini
+    detect_comment_ui_elements, generate_comment_gemini, generate_contextual_date_comment
 )
 from data_store import store_generated_comment, calculate_template_success_rates
 from prompt_engine import update_template_weights
@@ -833,8 +833,8 @@ class LangGraphHingeAgent:
             }
     
     def generate_comment_node(self, state: HingeAgentState) -> HingeAgentState:
-        """Generate comment for current profile"""
-        print("💬 Generating comment...")
+        """Generate flirty, date-focused comment for current profile"""
+        print("💬 Generating flirty, date-focused comment...")
         
         if not state['profile_text']:
             return {
@@ -843,7 +843,19 @@ class LangGraphHingeAgent:
                 "action_successful": False
             }
         
-        comment = generate_comment_gemini(state['profile_text'], GEMINI_API_KEY)
+        # Use contextual generation if we have detailed profile analysis
+        profile_analysis = state.get('profile_analysis', {})
+        if profile_analysis and len(profile_analysis) > 3:
+            print("🎯 Using contextual comment generation with profile analysis...")
+            comment = generate_contextual_date_comment(
+                profile_analysis, 
+                state['profile_text'], 
+                GEMINI_API_KEY
+            )
+        else:
+            print("💬 Using standard flirty comment generation...")
+            comment = generate_comment_gemini(state['profile_text'], GEMINI_API_KEY)
+        
         if not comment:
             comment = self.config.default_comment
         
@@ -852,10 +864,10 @@ class LangGraphHingeAgent:
             comment_id=comment_id,
             profile_text=state['profile_text'],
             generated_comment=comment,
-            style_used="langgraph_gemini"
+            style_used="langgraph_flirty_contextual"
         )
         
-        print(f"📝 Generated comment: {comment[:50]}...")
+        print(f"💋 Generated flirty comment: {comment[:60]}...")
         
         return {
             **state,

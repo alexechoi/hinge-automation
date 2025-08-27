@@ -66,7 +66,7 @@ def extract_text_from_image_gemini(image_path: str, gemini_api_key: str = None) 
 
 def generate_comment_gemini(profile_text: str, gemini_api_key: str = None) -> str:
     """
-    Generate a dating app comment using Gemini instead of OpenAI.
+    Generate a flirty, witty dating app comment focused on getting a date.
     
     Args:
         profile_text: The extracted text from the dating profile
@@ -85,20 +85,37 @@ def generate_comment_gemini(profile_text: str, gemini_api_key: str = None) -> st
         client = genai.Client(api_key=gemini_api_key)
         
         prompt = f"""
-        Based on the following dating profile description, generate a 1-line friendly and personalized comment asking them to go out with you:
+        Based on this dating profile, generate a FLIRTY, WITTY comment that's designed to get a date.
 
-        Profile Description:
+        Profile Content:
         {profile_text}
 
-        Requirements:
-        - Be witty and humorous
-        - Reference something specific from their profile
-        - Keep it under 50 words
-        - Make it feel personal, not generic
-        - End with a question or suggestion to meet up
-        - Be respectful and not overly aggressive
+        STYLE REQUIREMENTS:
+        - Be confident and playfully flirty (not aggressive or creepy)
+        - Use clever wordplay, puns, or witty observations
+        - Reference something specific from their profile to show you actually read it
+        - Create intrigue and make them want to respond
+        - Suggest meeting up in a clever/indirect way
+        - Sound like you're genuinely interested in them as a person
+        - Keep it under 40 words for maximum impact
 
-        Generate only the comment text, nothing else:
+        TONE EXAMPLES:
+        - Playful teasing about something they mentioned
+        - Clever callbacks to their interests/hobbies
+        - Confident but not arrogant
+        - Fun and lighthearted
+        - Slightly challenging or intriguing
+
+        AVOID:
+        - Generic compliments about looks
+        - Boring "hey how are you" openers  
+        - Overly sexual or inappropriate content
+        - Trying too hard to be funny
+        - Being too serious or formal
+
+        GOAL: Make them think "this person seems fun and interesting, I want to know more"
+
+        Generate ONE flirty, witty comment that will get them excited to meet up:
         """
         
         response = client.models.generate_content(
@@ -106,11 +123,130 @@ def generate_comment_gemini(profile_text: str, gemini_api_key: str = None) -> st
             contents=[prompt]
         )
         
-        return response.text.strip() if response.text else "Hey, I'd love to meet up!"
+        comment = response.text.strip() if response.text else ""
+        
+        # Clean up the comment (remove quotes if present)
+        comment = comment.strip('"\'')
+        
+        # Fallback if generation fails or is too generic
+        if not comment or len(comment) < 10 or "hey" in comment.lower()[:10]:
+            return _generate_fallback_flirty_comment(profile_text)
+        
+        return comment
         
     except Exception as e:
         print(f"Error generating comment with Gemini API: {e}")
-        return "Hey, I'd love to meet up!"
+        return _generate_fallback_flirty_comment(profile_text)
+
+
+def _generate_fallback_flirty_comment(profile_text: str) -> str:
+    """
+    Generate fallback flirty comments when main generation fails
+    """
+    import random
+    
+    # Try to match fallback to profile content
+    profile_lower = profile_text.lower()
+    
+    if any(word in profile_lower for word in ['coffee', 'caffeine', 'espresso', 'latte']):
+        return "I have a theory that our first coffee date is going to turn into an all-day adventure"
+    
+    if any(word in profile_lower for word in ['travel', 'adventure', 'explore', 'wanderlust']):
+        return "Your wanderlust is showing - want to explore the city together?"
+    
+    if any(word in profile_lower for word in ['food', 'foodie', 'cooking', 'restaurant', 'pizza']):
+        return "I'm getting serious 'let's debate the best restaurants over dinner' energy from you"
+    
+    if any(word in profile_lower for word in ['music', 'concert', 'festival', 'band']):
+        return "Plot twist: what if our music taste is as compatible as I think? Testing required"
+    
+    if any(word in profile_lower for word in ['workout', 'gym', 'fitness', 'yoga', 'hike']):
+        return "Challenge accepted - but first, let's grab drinks and see if you're as competitive as me"
+    
+    # Generic flirty fallbacks
+    flirty_fallbacks = [
+        "I'm getting major 'let's grab drinks and see if you're as interesting in person' vibes",
+        "Your profile just convinced me we need to test our compatibility over coffee",
+        "I have a theory that we'd have amazing chemistry - care to help me test it?",
+        "Warning: I'm about to suggest we skip the small talk and go straight to an adventure",
+        "Plot twist: what if we actually met up instead of just matching? Wild concept, I know",
+        "I'm calling it - we're going to have one of those 'can't believe we met on an app' stories",
+        "Fair warning: I'm really good at first dates. Want to find out?",
+        "I have a feeling you're trouble in the best way possible. Prove me right?",
+        "Your profile is giving me 'let's skip to the fun part' energy - drinks this week?",
+        "I'm convinced we're going to have one of those conversations that goes until 3am",
+        "Something tells me you'd be dangerous to take on a date - I'm intrigued",
+        "Your vibe is immaculate - when can we test the in-person chemistry?"
+    ]
+    
+    return random.choice(flirty_fallbacks)
+
+
+def generate_contextual_date_comment(profile_analysis: dict, profile_text: str, gemini_api_key: str = None) -> str:
+    """
+    Generate highly contextual, flirty comments based on detailed profile analysis
+    """
+    if not gemini_api_key:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+    
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        
+        interests = profile_analysis.get('interests', [])
+        personality_traits = profile_analysis.get('personality_traits', [])
+        profession = profile_analysis.get('profession', '')
+        location = profile_analysis.get('location', '')
+        
+        context_info = f"""
+        PROFILE ANALYSIS:
+        - Interests: {', '.join(interests[:5])}
+        - Personality: {', '.join(personality_traits[:3])}
+        - Profession: {profession}
+        - Location: {location}
+        
+        FULL PROFILE TEXT:
+        {profile_text[:500]}...
+        """
+        
+        prompt = f"""
+        Create an IRRESISTIBLE, flirty comment that will make them want to meet up ASAP.
+        
+        {context_info}
+        
+        ADVANCED REQUIREMENTS:
+        - Use their specific interests/job/personality to create a unique opener
+        - Be confident and slightly cocky (but charming)
+        - Create instant chemistry and intrigue
+        - Suggest a specific type of date that matches their interests
+        - Make them feel like you "get" them
+        - Use humor, wit, or clever observations
+        - Maximum 35 words for punch and impact
+        
+        FLIRTY COMMENT FORMULAS (pick one style):
+        1. "Your [specific interest] obsession + my [related skill/interest] = [fun date idea]. When are we testing this theory? 😏"
+        2. "I see you're into [interest]. Coincidence: I know the best [related place/activity] in town. Suspicious? 🤔"
+        3. "Your [personality trait] energy is dangerous - exactly my type. [Date suggestion] this week? 😈"
+        4. "Plot twist: someone who [references their content] definitely needs to meet someone who [your implied trait] 🎭"
+        5. "[Witty observation about their profile] - clearly we need to continue this conversation over [relevant activity] ✨"
+        
+        Generate ONE comment that's impossible to ignore:
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt]
+        )
+        
+        comment = response.text.strip().strip('"\'') if response.text else ""
+        
+        if not comment or len(comment) < 15:
+            return generate_comment_gemini(profile_text, gemini_api_key)
+        
+        return comment
+        
+    except Exception as e:
+        print(f"Error generating contextual comment: {e}")
+        return generate_comment_gemini(profile_text, gemini_api_key)
 
 
 
