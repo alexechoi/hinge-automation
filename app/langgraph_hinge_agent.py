@@ -281,8 +281,8 @@ class LangGraphHingeAgent:
         
         Available Actions:
         1. capture_screenshot - Take screenshot of current screen
-        2. analyze_profile - Extract text and analyze profile quality
-        3. scroll_profile - Scroll to see more profile content
+        2. analyze_profile - Comprehensive analysis (automatically scrolls 3 times, extracts all user content, analyzes complete profile)
+        3. scroll_profile - Manual scroll (rarely needed since analyze_profile handles scrolling)
         4. make_like_decision - Decide whether to like or dislike profile
         5. detect_like_button - Find like button coordinates (use before execute_like)
         6. execute_like - Tap the like button (REQUIRED before commenting - opens comment interface)
@@ -297,9 +297,9 @@ class LangGraphHingeAgent:
         
         Workflow Guidelines:
         - Always start with capture_screenshot if no current screenshot
-        - The general flow is: view profile > analyze profile > make decision > execute_like (tap like button) > generate_comment > send_comment_with_typing > next profile
-        - Analyze profiles before making decisions
-        - Only like profiles that meet quality criteria
+        - The general flow is: capture_screenshot > analyze_profile (comprehensive) > make_like_decision > detect_like_button > execute_like > generate_comment > send_comment_with_typing > next profile
+        - analyze_profile automatically performs 3 scrolls and extracts all user content (no need for separate scroll actions)
+        - Only like profiles that meet quality criteria based on comprehensive analysis
         - IMPORTANT: Must execute_like (tap like button) BEFORE attempting to comment - comment interface only appears after like button is tapped
         - For commenting workflow: detect_like_button → execute_like → generate_comment → send_comment_with_typing
         - If commenting fails: use send_like_without_comment as fallback
@@ -406,8 +406,8 @@ class LangGraphHingeAgent:
         }
     
     def analyze_profile_node(self, state: HingeAgentState) -> HingeAgentState:
-        """Analyze profile from current screenshot"""
-        print("🔍 Analyzing profile...")
+        """Comprehensive profile analysis with multiple scrolls to capture all content"""
+        print("🔍 Starting comprehensive profile analysis...")
         
         if not state['current_screenshot']:
             return {
@@ -416,25 +416,207 @@ class LangGraphHingeAgent:
                 "action_successful": False
             }
         
-        # Extract text and analyze profile
-        profile_text = extract_text_from_image_gemini(
-            state['current_screenshot'], GEMINI_API_KEY
-        )
+        # Collect multiple screenshots by scrolling through the profile
+        all_screenshots = []
+        all_profile_texts = []
         
-        ui_analysis = analyze_dating_ui_with_gemini(
-            state['current_screenshot'], GEMINI_API_KEY
-        )
+        # Start with initial screenshot
+        print("📸 Analyzing initial screenshot...")
+        all_screenshots.append(state['current_screenshot'])
+        initial_text = self._extract_user_content_only(state['current_screenshot'])
+        all_profile_texts.append(initial_text)
         
-        quality_score = ui_analysis.get('profile_quality_score', 0)
-        print(f"📊 Profile quality: {quality_score}/10")
+        # Perform 3 scrolls to capture full profile content
+        current_screenshot = state['current_screenshot']
+        
+        for scroll_num in range(1, 4):  # 3 scrolls
+            print(f"📜 Performing scroll {scroll_num}/3...")
+            
+            # Scroll down to reveal more content
+            scroll_x = int(state["width"] * 0.5)  # Center of screen
+            scroll_y_start = int(state["height"] * 0.7)  # Start from 70% down
+            scroll_y_end = int(state["height"] * 0.3)    # End at 30% down
+            
+            swipe(state["device"], scroll_x, scroll_y_start, scroll_x, scroll_y_end, duration=600)
+            time.sleep(2)  # Allow content to load
+            
+            # Capture screenshot after scroll
+            scroll_screenshot = capture_screenshot(
+                state["device"], 
+                f"profile_{state['current_profile_index']}_scroll_{scroll_num}"
+            )
+            all_screenshots.append(scroll_screenshot)
+            
+            # Extract user content from this scroll
+            scroll_text = self._extract_user_content_only(scroll_screenshot)
+            all_profile_texts.append(scroll_text)
+            
+            current_screenshot = scroll_screenshot
+        
+        # Combine all extracted text, removing duplicates
+        combined_text = self._combine_unique_content(all_profile_texts)
+        
+        # Perform comprehensive analysis on all collected content
+        print("🧠 Performing comprehensive profile analysis...")
+        comprehensive_analysis = self._analyze_complete_profile(all_screenshots, combined_text)
+        
+        quality_score = comprehensive_analysis.get('profile_quality_score', 0)
+        print(f"📊 Comprehensive profile quality: {quality_score}/10")
+        print(f"📝 Total content captured: {len(combined_text)} characters")
         
         return {
             **state,
-            "profile_text": profile_text,
-            "profile_analysis": ui_analysis,
+            "current_screenshot": current_screenshot,  # Use latest screenshot
+            "profile_text": combined_text,
+            "profile_analysis": comprehensive_analysis,
             "last_action": "analyze_profile",
             "action_successful": True
         }
+    
+    def _extract_user_content_only(self, screenshot_path: str) -> str:
+        """Extract only user-generated content, filtering out UI elements"""
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            
+            with open(screenshot_path, 'rb') as f:
+                image_bytes = f.read()
+            
+            image_part = types.Part.from_bytes(
+                data=image_bytes,
+                mime_type='image/png'
+            )
+            
+            prompt = """
+            Extract ONLY user-generated content from this dating profile screenshot. 
+            
+            INCLUDE:
+            - Profile name and age
+            - Bio/description text written by the user
+            - Prompt answers (e.g. "My simple pleasures: ...")
+            - Personal interests, hobbies, job titles
+            - Location if it's user-provided
+            - Any text the user wrote about themselves
+            
+            EXCLUDE/IGNORE:
+            - UI buttons (Like, Pass, Comment, Send, etc.)
+            - Navigation elements
+            - App interface text
+            - System messages
+            - Generic prompts/questions before answers
+            - Icons and emojis that are part of UI
+            - Distance indicators
+            - Match percentage
+            - Photo count indicators
+            - Any text that's part of the app interface
+            
+            Return only the clean user content, formatted naturally without any commentary or analysis.
+            If no user content is visible, return an empty string.
+            """
+            
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[prompt, image_part]
+            )
+            
+            return response.text.strip() if response.text else ""
+            
+        except Exception as e:
+            print(f"❌ Error extracting user content: {e}")
+            return ""
+    
+    def _combine_unique_content(self, text_list: list) -> str:
+        """Combine text from multiple screenshots, removing duplicates"""
+        all_lines = []
+        seen_lines = set()
+        
+        for text in text_list:
+            if not text:
+                continue
+                
+            lines = text.split('\n')
+            for line in lines:
+                clean_line = line.strip()
+                if clean_line and clean_line not in seen_lines:
+                    seen_lines.add(clean_line)
+                    all_lines.append(clean_line)
+        
+        return '\n'.join(all_lines)
+    
+    def _analyze_complete_profile(self, screenshots: list, combined_text: str) -> dict:
+        """Perform comprehensive analysis on the complete profile content"""
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            
+            # Use the most recent screenshot for visual analysis
+            with open(screenshots[-1], 'rb') as f:
+                image_bytes = f.read()
+            
+            image_part = types.Part.from_bytes(
+                data=image_bytes,
+                mime_type='image/png'
+            )
+            
+            prompt = f"""
+            Analyze this complete dating profile based on the comprehensive content below.
+            This content was extracted from multiple screenshots covering the entire profile.
+            
+            PROFILE CONTENT:
+            {combined_text}
+            
+            Provide analysis in JSON format:
+            {{
+                "profile_quality_score": 1-10,
+                "should_like": true/false,
+                "reason": "detailed reason for recommendation",
+                "profile_completeness": 1-10,
+                "conversation_potential": 1-10,
+                "content_depth": 1-10,
+                "authenticity_score": 1-10,
+                "red_flags": ["any", "concerning", "elements"],
+                "positive_indicators": ["good", "signs", "to", "like"],
+                "personality_traits": ["observed", "traits"],
+                "interests": ["extracted", "interests", "hobbies"],
+                "estimated_age": 25,
+                "name": "extracted_name",
+                "location": "extracted_location",
+                "profession": "extracted_job",
+                "content_quality": "high/medium/low",
+                "bio_length": "detailed/moderate/brief/missing",
+                "prompt_answers": 0-10,
+                "overall_impression": "detailed assessment"
+            }}
+            
+            Base your assessment on:
+            - Depth and quality of written content
+            - Authenticity and genuineness of responses
+            - Conversation starter potential
+            - Shared interests or compatibility indicators
+            - Overall effort put into the profile
+            - Completeness of information provided
+            
+            Be thorough since this represents their complete profile content.
+            """
+            
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+            
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[prompt, image_part],
+                config=config
+            )
+            
+            return json.loads(response.text) if response.text else {}
+            
+        except Exception as e:
+            print(f"❌ Error in comprehensive analysis: {e}")
+            return {
+                "profile_quality_score": 5,
+                "should_like": False,
+                "reason": "Analysis failed",
+                "content_quality": "unknown"
+            }
     
     def scroll_profile_node(self, state: HingeAgentState) -> HingeAgentState:
         """Scroll to see more profile content"""
