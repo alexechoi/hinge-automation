@@ -77,23 +77,25 @@ hinge-automation/
 ├── app/
 │   ├── main_agent.py              # 🎯 Main entry point (uses LangGraph + Gemini)
 │   ├── langgraph_hinge_agent.py   # 🔄 LangGraph workflow agent implementation
-│   ├── gemini_agent_controller.py # 🤖 Legacy Gemini agent (replaced by LangGraph)
 │   ├── gemini_analyzer.py         # 🧠 AI analysis functions (OCR, decision making)
 │   ├── helper_functions.py        # 📱 ADB automation & computer vision utilities
 │   ├── agent_config.py            # ⚙️  Agent configuration presets
 │   ├── config.py                  # 🔧 API keys and settings management
 │   ├── data_store.py              # 💾 Comment storage and success tracking
 │   ├── prompt_engine.py           # 📝 Comment generation and template management
-│   ├── server.py                  # 🌐 Optional web server interface
-│   ├── ocr_extractor.py           # 👁️  Legacy OCR functions functionality
+│   ├── test_gemini_agent.py       # 🧪 Test script for Gemini integration
+│   ├── test_cv_send_button.py     # 🧪 Computer vision test for UI elements
 │   ├── pyproject.toml             # 📦 uv/Python project configuration
 │   ├── uv.lock                    # 🔒 Dependency lock file
 │   ├── generated_comments.json    # 💬 Stored comment history and analytics
+│   ├── assets/                    # 🎨 UI element templates for computer vision
+│   │   ├── comment_field.png      # Comment input field template
+│   │   ├── like_button.png        # Like button template
+│   │   └── send_button.png        # Send button template
 │   └── images/                    # 📸 Screenshot storage for debugging
 ├── docker/
 │   └── Dockerfile                 # 🐳 Docker container configuration
-├── README.md                      # 📖 This file
-└── GEMINI_SETUP.md               # 🔧 Gemini migration guide (legacy)
+└── README.md                      # 📖 This file
 ```
 
 ## 🎮 Usage & Configuration
@@ -107,9 +109,25 @@ uv run python main_agent.py
 # Process 20 profiles with verbose logging
 uv run python main_agent.py --profiles 20 --verbose
 
-# Use fast configuration preset
+# Use fast configuration preset  
 uv run python main_agent.py --config fast --profiles 5
+
+# Use conservative configuration for safer automation
+uv run python main_agent.py --config conservative --profiles 3
+
+# Connect to specific device IP with no screenshot saving
+uv run python main_agent.py --device-ip 192.168.1.100 --no-screenshots
+
+# Full options example
+uv run python main_agent.py --profiles 15 --config fast --device-ip 127.0.0.1 --verbose
 ```
+
+**Available Options:**
+- `--profiles, -p`: Maximum number of profiles to process (default: 10)
+- `--config, -c`: Configuration preset - `default`, `fast`, or `conservative` (default: default)
+- `--device-ip`: Device IP address for ADB connection (default: 127.0.0.1)
+- `--verbose, -v`: Enable verbose logging for debugging
+- `--no-screenshots`: Disable screenshot saving to reduce storage usage
 
 ### LangGraph Architecture
 
@@ -180,16 +198,16 @@ cat .env
 # Should show: GEMINI_API_KEY=your-actual-key-here
 
 # Test Gemini connection
-uv run python test_gemini_agent.py
+cd app/ && uv run python test_gemini_agent.py
 ```
 
 **Dependency Issues**
 ```bash
-# Reinstall dependencies with uv
-uv sync --reinstall
+# Reinstall dependencies with uv (run from app/ directory)
+cd app/ && uv sync --reinstall
 
-# Or with pip
-pip install -r requirements.txt --force-reinstall
+# Or reinstall from lockfile
+cd app/ && uv sync --frozen
 ```
 
 **Image Directory Missing**
@@ -200,7 +218,7 @@ pip install -r requirements.txt --force-reinstall
 
 Enable verbose logging to see detailed execution steps:
 ```bash
-uv run python main_agent.py --verbose
+cd app/ && uv run python main_agent.py --verbose
 ```
 
 ## 🤝 Contributing
@@ -210,7 +228,7 @@ We welcome contributions! Here's how to get started:
 1. **Fork** the repository
 2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
 3. **Make** your changes following the existing code patterns
-4. **Test** your changes: `uv run python test_gemini_agent.py`
+4. **Test** your changes: `cd app/ && uv run python test_gemini_agent.py`
 5. **Commit** your changes: `git commit -m 'Add amazing feature'`
 6. **Push** to the branch: `git push origin feature/amazing-feature`
 7. **Open** a Pull Request
@@ -222,8 +240,11 @@ We welcome contributions! Here's how to get started:
 git clone https://github.com/alexechoi/hinge-automation.git
 cd hinge-automation/app/
 
-# Install dev dependencies
-uv sync --dev
+# Install dependencies (uv automatically handles dev dependencies)
+uv sync
+
+# Test the setup
+uv run python test_gemini_agent.py
 ```
 
 ## Recommend device config 
