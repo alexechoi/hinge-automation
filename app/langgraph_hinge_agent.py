@@ -17,7 +17,7 @@ from config import GEMINI_API_KEY
 from helper_functions import (
     connect_device, get_screen_resolution, open_hinge,
     capture_screenshot, tap, tap_with_confidence, swipe,
-    dismiss_keyboard, clear_screenshots_directory, detect_like_button_cv, detect_send_button_cv, input_text_robust
+    dismiss_keyboard, clear_screenshots_directory, detect_like_button_cv, detect_send_button_cv, detect_comment_field_cv, input_text_robust
 )
 from gemini_analyzer import (
     extract_text_from_image_gemini, analyze_dating_ui_with_gemini,
@@ -113,9 +113,7 @@ class LangGraphHingeAgent:
         workflow.add_node("detect_like_button", self.detect_like_button_node)
         workflow.add_node("execute_like", self.execute_like_node)
         workflow.add_node("generate_comment", self.generate_comment_node)
-        workflow.add_node("type_comment", self.type_comment_node)
-        workflow.add_node("close_text_interface", self.close_text_interface_node)
-        workflow.add_node("send_comment", self.send_comment_node)
+        workflow.add_node("send_comment_with_typing", self.send_comment_with_typing_node)
         workflow.add_node("send_like_without_comment", self.send_like_without_comment_node)
         workflow.add_node("execute_dislike", self.execute_dislike_node)
         workflow.add_node("navigate_to_next", self.navigate_to_next_node)
@@ -147,9 +145,7 @@ class LangGraphHingeAgent:
                 "detect_like_button": "detect_like_button",
                 "execute_like": "execute_like",
                 "generate_comment": "generate_comment",
-                "type_comment": "type_comment",
-                "close_text_interface": "close_text_interface",
-                "send_comment": "send_comment",
+                "send_comment_with_typing": "send_comment_with_typing",
                 "send_like_without_comment": "send_like_without_comment",
                 "execute_dislike": "execute_dislike",
                 "navigate_to_next": "navigate_to_next",
@@ -162,7 +158,7 @@ class LangGraphHingeAgent:
         # Add edges back to Gemini decision node from all action nodes
         action_nodes = [
             "capture_screenshot", "analyze_profile", "scroll_profile", "make_like_decision",
-            "detect_like_button", "execute_like", "generate_comment", "type_comment", "close_text_interface", "send_comment", "send_like_without_comment",
+            "detect_like_button", "execute_like", "generate_comment", "send_comment_with_typing", "send_like_without_comment",
             "execute_dislike", "navigate_to_next", "verify_profile_change", "recover_from_stuck"
         ]
         
@@ -288,26 +284,25 @@ class LangGraphHingeAgent:
         2. analyze_profile - Extract text and analyze profile quality
         3. scroll_profile - Scroll to see more profile content
         4. make_like_decision - Decide whether to like or dislike profile
-        5. detect_like_button - Find like button coordinates
-        6. execute_like - Tap the like button
-        7. generate_comment - Create personalized comment
-        8. type_comment - Input comment text into field
-        9. close_text_interface - Close keyboard/text input interface
-        10. send_comment - Find and tap send button using CV
-        11. send_like_without_comment - Send like without typing comment (fallback)
-        12. execute_dislike - Dislike/skip current profile
-        13. navigate_to_next - Move to next profile
-        14. verify_profile_change - Check if we moved to new profile
-        15. recover_from_stuck - Attempt recovery when stuck
-        16. finalize - End the session
+        5. detect_like_button - Find like button coordinates (use before execute_like)
+        6. execute_like - Tap the like button (REQUIRED before commenting - opens comment interface)
+        7. generate_comment - Create personalized comment (use after execute_like)
+        8. send_comment_with_typing - Complete comment process (use after generate_comment, requires comment interface to be open)
+        9. send_like_without_comment - Send like without typing comment (fallback)
+        10. execute_dislike - Dislike/skip current profile
+        11. navigate_to_next - Move to next profile
+        12. verify_profile_change - Check if we moved to new profile
+        13. recover_from_stuck - Attempt recovery when stuck
+        14. finalize - End the session
         
         Workflow Guidelines:
         - Always start with capture_screenshot if no current screenshot
-        - The general flow is view profile > tap like or dismiss button > tap comment field > enter comment > send comment >
+        - The general flow is: view profile > analyze profile > make decision > execute_like (tap like button) > generate_comment > send_comment_with_typing > next profile
         - Analyze profiles before making decisions
         - Only like profiles that meet quality criteria
-        - For comment interface: generate_comment → type_comment → close_text_interface → send_comment
-        - If comment typing fails: use send_like_without_comment as fallback
+        - IMPORTANT: Must execute_like (tap like button) BEFORE attempting to comment - comment interface only appears after like button is tapped
+        - For commenting workflow: detect_like_button → execute_like → generate_comment → send_comment_with_typing
+        - If commenting fails: use send_like_without_comment as fallback
         - Use recovery when stuck count > 2
         - Finalize when max profiles reached or too many errors
         """
@@ -790,15 +785,90 @@ class LangGraphHingeAgent:
                 "action_successful": False
             }
     
-    def send_comment_node(self, state: HingeAgentState) -> HingeAgentState:
-        """Find and tap send button using OpenCV"""
-        print("📤 Finding and tapping send button with OpenCV...")
+    def send_comment_with_typing_node(self, state: HingeAgentState) -> HingeAgentState:
+        """Consolidated comment tool: tap field, type comment, dismiss keyboard, send comment"""
+        print("💬 Starting consolidated comment process...")
+        
+        if not state.get('generated_comment'):
+            print("❌ No comment to type")
+            return {
+                **state,
+                "last_action": "send_comment_with_typing",
+                "action_successful": False
+            }
+        
+        comment = state['generated_comment']
+        print(f"💬 Processing comment: {comment[:50]}...")
         
         try:
-            # Take fresh screenshot to find send button
+            # Step 1: Tap the text input field
+            print("🎯 Step 1: Tapping comment field...")
+            fresh_screenshot = capture_screenshot(state["device"], "comment_interface_typing")
+            
+            # Use OpenCV to detect comment field
+            cv_result = detect_comment_field_cv(fresh_screenshot)
+            
+            if not cv_result.get('found'):
+                print("❌ Comment field not found with CV detection")
+                # Fallback to Gemini detection
+                comment_ui = detect_comment_ui_elements(fresh_screenshot, GEMINI_API_KEY)
+                
+                if not comment_ui.get('comment_field_found'):
+                    print("❌ Comment field not found with Gemini fallback either")
+                    return {
+                        **state,
+                        "current_screenshot": fresh_screenshot,
+                        "last_action": "send_comment_with_typing",
+                        "action_successful": False
+                    }
+                
+                # Use Gemini coordinates
+                comment_x = int(comment_ui['comment_field_x'] * state["width"])
+                comment_y = int(comment_ui['comment_field_y'] * state["height"])
+                confidence = comment_ui.get('comment_field_confidence', 0.8)
+                print(f"🎯 Using Gemini fallback - Tapping comment field at ({comment_x}, {comment_y})")
+            else:
+                # Use CV coordinates
+                comment_x = cv_result['x']
+                comment_y = cv_result['y']
+                confidence = cv_result['confidence']
+                print(f"✅ Comment field found with OpenCV at ({comment_x}, {comment_y}) - confidence: {confidence:.3f}")
+            
+            tap_with_confidence(state["device"], comment_x, comment_y, confidence)
+            time.sleep(2)
+            
+            # Step 2: Enter comment using ADB shell type
+            print("⌨️ Step 2: Typing comment...")
+            
+            # Clear any existing text
+            state["device"].shell("input keyevent KEYCODE_CTRL_A")
+            time.sleep(0.5)
+            
+            # Use robust text input
+            input_result = input_text_robust(state["device"], comment, max_attempts=2)
+            
+            if not input_result['success']:
+                print(f"❌ Comment typing failed: {input_result.get('error', 'Unknown error')}")
+                return {
+                    **state,
+                    "current_screenshot": fresh_screenshot,
+                    "last_action": "send_comment_with_typing",
+                    "action_successful": False,
+                    "errors_encountered": state["errors_encountered"] + 1
+                }
+            
+            print(f"✅ Comment typed successfully using {input_result['method_used']}")
+            
+            # Step 3: Exit text input by tapping outside keyboard
+            print("🔽 Step 3: Dismissing keyboard...")
+            
+            dismiss_keyboard(state["device"], state["width"], state["height"])
+            time.sleep(2)
+            
+            # Step 4: Locate send button using CV
+            print("🔍 Step 4: Finding send button with OpenCV...")
             send_screenshot = capture_screenshot(state["device"], "send_button_detection")
             
-            # Use OpenCV to detect send button
             cv_result = detect_send_button_cv(send_screenshot)
             
             if cv_result.get('found'):
@@ -813,7 +883,8 @@ class LangGraphHingeAgent:
                 confidence = 0.5
                 print(f"⚠️ Using fallback send button coordinates ({send_x}, {send_y})")
             
-            # Tap the send button
+            # Step 5: Tap the send button
+            print("📤 Step 5: Tapping send button...")
             tap_with_confidence(state["device"], send_x, send_y, confidence)
             time.sleep(3)
             
@@ -827,7 +898,7 @@ class LangGraphHingeAgent:
             })
             
             if profile_verification.get('profile_changed', False):
-                print("✅ Comment sent successfully - moved to new profile")
+                print("✅ Consolidated comment process successful - moved to new profile")
                 return {
                     **state,
                     "current_screenshot": verification_screenshot,
@@ -835,7 +906,7 @@ class LangGraphHingeAgent:
                     "current_profile_index": state["current_profile_index"] + 1,
                     "profiles_processed": state["profiles_processed"] + 1,
                     "stuck_count": 0,
-                    "last_action": "send_comment",
+                    "last_action": "send_comment_with_typing",
                     "action_successful": True
                 }
             else:
@@ -843,29 +914,29 @@ class LangGraphHingeAgent:
                 still_in_comment = detect_comment_ui_elements(verification_screenshot, GEMINI_API_KEY)
                 
                 if not still_in_comment.get('comment_field_found'):
-                    print("✅ Comment sent (interface closed) - stayed on profile")
+                    print("✅ Consolidated comment process successful (interface closed) - stayed on profile")
                     return {
                         **state,
                         "current_screenshot": verification_screenshot,
                         "comments_sent": state["comments_sent"] + 1,
-                        "last_action": "send_comment",
+                        "last_action": "send_comment_with_typing",
                         "action_successful": True
                     }
                 else:
-                    print("⚠️ Comment sending may have failed - still in interface")
+                    print("⚠️ Consolidated comment process may have failed - still in interface")
                     return {
                         **state,
                         "current_screenshot": verification_screenshot,
-                        "last_action": "send_comment",
+                        "last_action": "send_comment_with_typing",
                         "action_successful": False
                     }
             
         except Exception as e:
-            print(f"❌ Send comment failed: {e}")
+            print(f"❌ Consolidated comment process failed: {e}")
             return {
                 **state,
                 "errors_encountered": state["errors_encountered"] + 1,
-                "last_action": "send_comment",
+                "last_action": "send_comment_with_typing",
                 "action_successful": False
             }
     
