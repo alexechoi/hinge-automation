@@ -1,33 +1,30 @@
-# 🤖 Hinge Automation - AI-Powered Dating App Bot
+# 🤖 Hinge Farmer AI Agent - AI-Powered Dating App Bot
 
-An intelligent dating app automation system that uses **Google Gemini AI**, **Computer Vision**, and **Android Debug Bridge (ADB)** to automatically analyze profiles, make smart decisions, and send personalized comments on Hinge.
+An intelligent Hinge AI agent that uses **Google Gemini AI**, **LangGraph**, **Computer Vision**, and **Android Debug Bridge (ADB)** to automatically analyze profiles, make smart decisions, and send personalized comments on Hinge.
 
 ## 🌟 Features
 
-- **🧠 AI-Powered Decision Making**: Multiple agent architectures (Gemini, LangGraph) for intelligent profile analysis
+- **🧠 AI-Powered Decision Making**: Gemini for intelligent profile analysis
 - **👀 Advanced Computer Vision**: Detects UI elements, analyzes profile images, and handles dynamic screens
 - **💬 Personalized Comment Generation**: Creates contextual, human-like messages based on profile content
-- **🔄 Adaptive Learning**: Tracks success rates and continuously improves comment strategies
-- **📱 Full Device Automation**: Handles complex interactions like scrolling, tapping, text input, and verification
+- **📱 Full Device Automation**: Handles complex interactions like scrolling, tapping, text input, and verification for Android devices
 - **🎯 Smart Verification**: Uses profile change detection to verify actions succeeded
-- **⚡ Multiple Execution Modes**: Choose between different AI agent controllers
 
 ## 🛠️ Tech Stack
 
 - **Python 3.13+** with modern dependency management via [uv](https://github.com/astral-sh/uv)
 - **Google Gemini 2.5 Flash** for multimodal AI analysis and text generation
 - **OpenCV** for computer vision and UI element detection
-- **LangGraph** for advanced agent workflows (optional)
+- **LangGraph** for advanced agent workflow orchestration
 - **ADB (Android Debug Bridge)** for device automation
-- **Docker** for containerized deployment
 
 ## 📋 Requirements
 
 ### Hardware & Software
-- **Android device** with USB debugging enabled
+- **Android device** with USB debugging enabled and Hinge installed
 - **ADB**: Install [Android SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools)
 - **Python 3.13+**
-- **uv** package manager (recommended) or pip
+- **uv** package manager (recommended)
 
 ### API Keys
 - **Google Gemini API Key**: Get your free key from [Google AI Studio](https://aistudio.google.com/) - however please note the free key has a very low rate limit that may not be enough for this agent
@@ -273,5 +270,6 @@ The system tracks and displays:
 - **Comment analytics**: Performance of different comment styles
 
 ---
+
 
 **Built with ❤️ and 🤖 AI**
