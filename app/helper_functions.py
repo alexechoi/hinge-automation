@@ -532,3 +532,34 @@ def open_hinge(device):
     package_name = "co.match.android.matchhinge"
     device.shell(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
     time.sleep(5)
+
+
+def reset_hinge_app(device):
+    """
+    Reset the Hinge app by force closing it, clearing from recent apps, and reopening it.
+    This refreshes the app state and can help when the agent gets stuck.
+    """
+    package_name = "co.match.android.matchhinge"
+    
+    print("🔄 Resetting Hinge app...")
+    
+    # Step 1: Force stop the app
+    print("🛑 Force stopping Hinge app...")
+    device.shell(f"am force-stop {package_name}")
+    time.sleep(2)
+    
+    # Step 2: Kill app from background processes
+    print("💀 Killing background processes...")
+    device.shell(f"am kill {package_name}")
+    time.sleep(1)
+    
+    # Step 3: Go back to home screen
+    device.shell("input keyevent KEYCODE_HOME")
+    time.sleep(2)
+    
+    # Step 4: Reopen the app
+    print("🚀 Reopening Hinge app...")
+    device.shell(f"am start -n {package_name}")
+    time.sleep(2)
+    
+    print("✅ Hinge app reset completed")

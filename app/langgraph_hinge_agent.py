@@ -15,7 +15,7 @@ from google.genai import types
 
 from config import GEMINI_API_KEY
 from helper_functions import (
-    connect_device, get_screen_resolution, open_hinge,
+    connect_device, get_screen_resolution, open_hinge, reset_hinge_app,
     capture_screenshot, tap, tap_with_confidence, swipe,
     dismiss_keyboard, clear_screenshots_directory, detect_like_button_cv, detect_send_button_cv, detect_comment_field_cv, input_text_robust
 )
@@ -119,6 +119,7 @@ class LangGraphHingeAgent:
         workflow.add_node("navigate_to_next", self.navigate_to_next_node)
         workflow.add_node("verify_profile_change", self.verify_profile_change_node)
         workflow.add_node("recover_from_stuck", self.recover_from_stuck_node)
+        workflow.add_node("reset_app", self.reset_app_node)
         workflow.add_node("finalize_session", self.finalize_session_node)
         
         # Set entry point
@@ -151,6 +152,7 @@ class LangGraphHingeAgent:
                 "navigate_to_next": "navigate_to_next",
                 "verify_profile_change": "verify_profile_change",
                 "recover_from_stuck": "recover_from_stuck",
+                "reset_app": "reset_app",
                 "finalize": "finalize_session"
             }
         )
@@ -159,7 +161,7 @@ class LangGraphHingeAgent:
         action_nodes = [
             "capture_screenshot", "analyze_profile", "scroll_profile", "make_like_decision",
             "detect_like_button", "execute_like", "generate_comment", "send_comment_with_typing", "send_like_without_comment",
-            "execute_dislike", "navigate_to_next", "verify_profile_change", "recover_from_stuck"
+            "execute_dislike", "navigate_to_next", "verify_profile_change", "recover_from_stuck", "reset_app"
         ]
         
         for node in action_nodes:
@@ -293,7 +295,8 @@ class LangGraphHingeAgent:
         11. navigate_to_next - Move to next profile
         12. verify_profile_change - Check if we moved to new profile
         13. recover_from_stuck - Attempt recovery when stuck
-        14. finalize - End the session
+        14. reset_app - Force close and reopen Hinge app (use when severely stuck on or an unexpected page or different app)
+        15. finalize - End the session
         
         Workflow Guidelines:
         - Always start with capture_screenshot if no current screenshot
@@ -303,7 +306,10 @@ class LangGraphHingeAgent:
         - IMPORTANT: Must execute_like (tap like button) BEFORE attempting to comment - comment interface only appears after like button is tapped
         - For commenting workflow: detect_like_button → execute_like → generate_comment → send_comment_with_typing
         - If commenting fails: use send_like_without_comment as fallback
-        - Use recovery when stuck count > 2
+        - Use recover_from_stuck when stuck count > 2
+        - Use reset_app when stuck count > 4 OR when the app appears unresponsive or severely stuck
+        - reset_app is a nuclear option that completely refreshes the app state - use when other recovery methods fail
+        - After reset_app, you'll need to start fresh with capture_screenshot
         - Finalize when max profiles reached or too many errors
         """
         
@@ -1404,6 +1410,44 @@ class LangGraphHingeAgent:
             "last_action": "recover_from_stuck",
             "action_successful": True
         }
+    
+    def reset_app_node(self, state: HingeAgentState) -> HingeAgentState:
+        """Reset the Hinge app when stuck - force close, clear from multitasking, and reopen"""
+        print("🔄 Executing app reset to recover from stuck state...")
+        
+        try:
+            # Use the reset function from helper_functions
+            reset_hinge_app(state["device"])
+            
+            # Capture screenshot after app reset
+            reset_screenshot = capture_screenshot(
+                state["device"], 
+                f"app_reset_{state['current_profile_index']}"
+            )
+            
+            # Reset state counters since we're starting fresh
+            return {
+                **state,
+                "current_screenshot": reset_screenshot,
+                "profile_text": "",  # Clear previous profile data
+                "profile_analysis": {},
+                "previous_profile_text": "",
+                "previous_profile_features": {},
+                "stuck_count": 0,  # Reset stuck count
+                "retry_count": 0,
+                "last_action": "reset_app",
+                "action_successful": True,
+                "errors_encountered": max(0, state["errors_encountered"] - 1)  # Reduce error count as reset might fix issues
+            }
+            
+        except Exception as e:
+            print(f"❌ App reset failed: {e}")
+            return {
+                **state,
+                "errors_encountered": state["errors_encountered"] + 1,
+                "last_action": "reset_app",
+                "action_successful": False
+            }
     
     def finalize_session_node(self, state: HingeAgentState) -> HingeAgentState:
         """Finalize the automation session"""
