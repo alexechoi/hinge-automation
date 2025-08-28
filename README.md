@@ -1,6 +1,16 @@
 # 🤖 Hinge Farmer AI Agent - AI-Powered Dating App Bot
+![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Google Gemini](https://img.shields.io/badge/Google_Gemini-2.5_Flash-4285F4?style=for-the-badge&logo=googlegemini&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-Agent_Framework-8A2BE2?style=for-the-badge&logo=graph&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-Computer_Vision-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
+![ADB](https://img.shields.io/badge/ADB-Android_Debug_Bridge-3DDC84?style=for-the-badge&logo=android&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![uv](https://img.shields.io/badge/uv-Python_Packages-FF6F61?style=for-the-badge&logo=python&logoColor=white)
 
 An intelligent Hinge AI agent that uses **Google Gemini AI**, **LangGraph**, **Computer Vision**, and **Android Debug Bridge (ADB)** to automatically analyze profiles, make smart decisions, and send personalized comments on Hinge.
+
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/6ff7a85b-aaa4-4ea1-baef-50c7be5528db" />
+
 
 ## 🌟 Features
 
@@ -273,3 +283,4 @@ The system tracks and displays:
 
 
 **Built with ❤️ and 🤖 AI**
+
